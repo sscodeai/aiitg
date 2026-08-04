@@ -114,6 +114,7 @@ class ScanReport:
     duration_ms: int = 0
     evidence: list[Evidence] = field(default_factory=list)
     trust_label: dict | None = None  # filled by pipeline when trust labeling runs
+    decision: dict | None = None  # filled by pipeline when policy evaluation runs
 
     @classmethod
     def from_error(cls, error: Any, *, file: str = "") -> ScanReport:
@@ -170,6 +171,7 @@ class ScanReport:
             "summary": self.summary,
             "risk_score": self.risk_score,
             "trust_label": self.trust_label,
+            "decision": self.decision,
             "evidence": [ev.to_dict() for ev in self.evidence],
         }
 
