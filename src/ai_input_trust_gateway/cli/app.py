@@ -10,6 +10,7 @@ import typer
 from ai_input_trust_gateway._version import __version__
 from ai_input_trust_gateway.core.detector import default_detector_registry, run_scan
 from ai_input_trust_gateway.core.evidence import ScanReport, Severity
+from ai_input_trust_gateway.pipeline import process_file
 from ai_input_trust_gateway.reporters.json_reporter import JsonReporter
 from ai_input_trust_gateway.reporters.rich_reporter import RichReporter
 
@@ -86,6 +87,56 @@ def scan(
     report, code = _scan_one(target, sev, set(skip_detector))
     _emit(report, format, output)
     raise typer.Exit(code=code)
+
+
+@app.command()
+def sanitize(
+    target: Path = typer.Argument(..., exists=True, resolve_path=True, help="File to sanitize."),
+    mode: str = typer.Option("strip", "--mode", help="strip (remove) | redact (replace with [REDACTED])."),
+    min_severity: str = typer.Option("low", "--min-severity", help="Minimum severity to strip."),
+    output: str = typer.Option("-", "--output", help="Output file ('-' = stdout)."),
+) -> None:
+    """Sanitize a file: strip/redact hidden content, print the cleaned text."""
+    sev = _resolve_min_severity(min_severity)
+    result = process_file(str(target), mode=mode, min_severity=sev)
+    text = result.sanitized.text
+    if output == "-":
+        sys.stdout.write(text + ("\n" if text and not text.endswith("\n") else ""))
+    else:
+        Path(output).write_text(text, encoding="utf-8")
+    if result.sanitized.removed_count > 0:
+        typer.echo(
+            f"# sanitized: removed {result.sanitized.removed_count} hidden item(s) "
+            f"({len(result.report.evidence)} evidence finding(s) total)",
+            err=True,
+        )
+
+
+@app.command()
+def trust(
+    target: Path = typer.Argument(..., exists=True, resolve_path=True, help="File to trust-label."),
+    format: str = typer.Option("json", "--format", help="json | rich"),
+) -> None:
+    """Compute the trust label for a file (safe/caution/dangerous)."""
+    result = process_file(str(target))
+    label = result.label
+    from rich.console import Console
+
+    console = Console()
+    if format == "rich":
+        color = "bold green" if result.is_safe else ("bold yellow" if not result.is_dangerous else "bold red")
+        console.print(f"Trust label: [{color}]{label.value.value}[/] (score {label.score:.2f})")
+        dims = (
+            f"structure: {label.structure_score:.2f}  "
+            f"content: {label.content_score:.2f}  meta: {label.meta_score:.2f}"
+        )
+        console.print(f"  {dims}")
+        for r in label.reasons:
+            console.print(f"  - {r}")
+    else:
+        import json
+
+        typer.echo(json.dumps(label.to_dict(), ensure_ascii=False, indent=2))
 
 
 @app.command()
