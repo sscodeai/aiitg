@@ -1,0 +1,62 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ai-input-trust-gateway"
+version = "0.1.0"
+description = "AI Input Trust Gateway — hidden content auditor for documents fed to LLMs/Agents"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "SS", email = "dalisikm@gmail.com" }]
+keywords = ["ai-security", "prompt-injection", "llm", "agent", "hidden-text", "zero-width"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Security",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "python-docx>=1.1",
+    "openpyxl>=3.1",
+    "pypdf>=5",
+    "beautifulsoup4>=4.12",
+    "lxml>=5",
+    "oletools>=0.60",
+    "typer>=0.12",
+    "rich>=13",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-cov",
+    "reportlab",
+    "xlwt",
+    "ruff",
+    "mypy",
+]
+
+[project.scripts]
+aiitg = "ai_input_trust_gateway.cli.main:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ai_input_trust_gateway"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
