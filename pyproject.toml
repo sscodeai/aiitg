@@ -28,6 +28,7 @@ dependencies = [
     "oletools>=0.60",
     "typer>=0.12",
     "rich>=13",
+    "mcp<2",
 ]
 
 [project.optional-dependencies]
@@ -38,10 +39,12 @@ dev = [
     "xlwt",
     "ruff",
     "mypy",
+    "anyio>=4",
 ]
 
 [project.scripts]
 aiitg = "ai_input_trust_gateway.cli.main:main"
+aiitg-mcp = "ai_input_trust_gateway.mcp_server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ai_input_trust_gateway"]
