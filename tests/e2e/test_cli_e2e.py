@@ -84,3 +84,47 @@ class TestCLIVersion:
         result = runner.invoke(app, ["version"])
         assert result.exit_code == 0
         assert "aiitg" in result.output
+
+
+class TestCLISanitize:
+    def test_sanitize_strips_zerowidth(self, tmp_path):
+        f = builders.build_docx_with_zerowidth(tmp_path / "evil.docx")
+        result = runner.invoke(app, ["sanitize", str(f)])
+        assert result.exit_code == 0
+        assert "\u200b" not in result.output
+        assert "SECRETINSTRUCTION" in result.output
+
+    def test_sanitize_redact_mode(self, tmp_path):
+        f = builders.build_html_hidden_style(tmp_path / "h.html")
+        result = runner.invoke(app, ["sanitize", str(f), "--mode", "redact"])
+        assert result.exit_code == 0
+        assert "IGNORE ALL" not in result.output
+        assert "visible text" in result.output
+
+    def test_sanitize_output_file(self, tmp_path):
+        f = builders.build_docx_with_zerowidth(tmp_path / "evil.docx")
+        out = tmp_path / "clean.txt"
+        result = runner.invoke(app, ["sanitize", str(f), "--output", str(out)])
+        assert result.exit_code == 0
+        assert out.exists()
+        assert "\u200b" not in out.read_text(encoding="utf-8")
+
+
+class TestCLITrust:
+    def test_trust_benign(self, tmp_path):
+        f = builders.build_docx_benign(tmp_path / "clean.docx")
+        result = runner.invoke(app, ["trust", str(f)])
+        assert result.exit_code == 0
+        assert '"value": "safe"' in result.output
+
+    def test_trust_malicious(self, tmp_path):
+        f = builders.build_docx_with_zerowidth(tmp_path / "evil.docx")
+        result = runner.invoke(app, ["trust", str(f)])
+        assert result.exit_code == 0
+        assert '"value": "caution"' in result.output or '"value": "dangerous"' in result.output
+
+    def test_trust_rich(self, tmp_path):
+        f = builders.build_docx_with_zerowidth(tmp_path / "evil.docx")
+        result = runner.invoke(app, ["trust", str(f), "--format", "rich"])
+        assert result.exit_code == 0
+        assert "Trust label" in result.output
