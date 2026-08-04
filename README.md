@@ -80,16 +80,37 @@ aiitg scan report.docx --skip-detector DET-003
 aiitg list-detectors
 ```
 
+### M1: 净化 + 可信度标注
+
+```bash
+# 净化：剥离隐藏内容，输出可安全喂给 LLM 的文本
+aiitg sanitize report.docx                 # strip 模式（默认，删除隐藏内容）
+aiitg sanitize report.docx --mode redact   # redact 模式（替换为 [REDACTED]）
+aiitg sanitize report.xlsx --output clean.txt
+
+# 可信度标注：safe / caution / dangerous
+aiitg trust report.docx                    # JSON
+aiitg trust report.pdf --format rich       # 终端可读
+```
+
 ### 库形态
 
 ```python
-from ai_input_trust_gateway import scan_file, Severity
+from ai_input_trust_gateway import scan_file, process_file, Severity
 
-report = scan_file("report.docx")          # 自动分派格式
+# 仅扫描
+report = scan_file("report.docx")
 for ev in report.evidence:
     print(ev.severity, ev.detector_id, ev.location.paragraph, ev.title)
-high = report.filter(min_severity=Severity.HIGH)
-report.to_json("out.json")
+
+# M1 闭环：scan → sanitize → trust label
+result = process_file("report.docx")
+if result.is_safe:
+    llm_context = result.sanitized.text       # 直接喂给 LLM
+elif not result.is_dangerous:  # caution
+    llm_context = result.sanitized.text       # 净化后已足够安全
+else:  # dangerous
+    human_review(result.report)               # 阻断 / 人工复核
 ```
 
 ## 测试
@@ -102,8 +123,8 @@ make typecheck   # mypy
 
 ## 路线图
 
-- **M0（当前）**：隐藏内容审计 —— 4 格式 × 7 检测器 → 坐标级 JSON 证据
-- **M1**：内容净化/可信度标注管道（"文档 → 净化文本 → LLM"闭环，直接消费 Evidence 坐标）
+- **M0（已完成）**：隐藏内容审计 —— 4 格式 × 7 检测器 → 坐标级 JSON 证据
+- **M1（已完成）**：内容净化 + 可信度标注 —— `aiitg sanitize`（strip/redact）+ `aiitg trust`（safe/caution/dangerous）+ `process_file()` 闭环
 - **M2**：策略执行层（最小权限 / 人工批准 / 审计），二开 invariant 规则引擎
 - **长期**：标准化 "AI 输入信任网关"（gateway 形态 + MCP），对标 "AI 时代的杀毒软件/邮件网关"
 
