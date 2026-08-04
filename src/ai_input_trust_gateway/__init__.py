@@ -12,6 +12,7 @@ from ai_input_trust_gateway.core.detector import Detector, DetectorRegistry, run
 from ai_input_trust_gateway.core.document import ParsedDocument, PdfPage, Sheet, TextParagraph, TextRun
 from ai_input_trust_gateway.core.evidence import Evidence, Location, ScanReport, Severity
 from ai_input_trust_gateway.core.registry import FormatRegistry
+from ai_input_trust_gateway.pipeline import PipelineResult, process_file
 
 __all__ = [
     "__version__",
@@ -30,6 +31,7 @@ __all__ = [
     "FormatRegistry",
     "scan_file",
     "process_file",
+    "PipelineResult",
 ]
 
 

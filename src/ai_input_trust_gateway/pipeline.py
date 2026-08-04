@@ -25,17 +25,19 @@ from ai_input_trust_gateway.core.detector import default_detector_registry, run_
 from ai_input_trust_gateway.core.document import ParsedDocument
 from ai_input_trust_gateway.core.evidence import ScanReport, Severity
 from ai_input_trust_gateway.core.registry import default_format_registry
+from ai_input_trust_gateway.policy import Decision, default_policy
 from ai_input_trust_gateway.sanitize import Sanitizer, SanitizeResult
 from ai_input_trust_gateway.trust_label import TrustLabel, TrustLabelValue, compute_trust_label
 
 
 @dataclass
 class PipelineResult:
-    """Full output of the scan → sanitize → label pipeline."""
+    """Full output of the scan → sanitize → label → decide pipeline."""
 
     report: ScanReport
     sanitized: SanitizeResult
     label: TrustLabel
+    decision: Decision | None = None
     doc: ParsedDocument | None = None
 
     @property
@@ -45,6 +47,10 @@ class PipelineResult:
     @property
     def is_dangerous(self) -> bool:
         return self.label.value.value == "dangerous"
+
+    @property
+    def is_blocked(self) -> bool:
+        return self.decision is not None and self.decision.is_blocked
 
 
 def process_file(path: str, *, mode: str = "strip", min_severity: Severity | None = None) -> PipelineResult:
@@ -85,7 +91,11 @@ def process_file(path: str, *, mode: str = "strip", min_severity: Severity | Non
 
     label = compute_trust_label(report, doc_text=doc.all_text)
 
-    # embed label into report for a single serializable output
-    report.trust_label = label.to_dict()
+    # M2: policy decision (Assume Compromise execution layer)
+    decision = default_policy().evaluate(report, label.value)
 
-    return PipelineResult(report=report, sanitized=sanitized, label=label, doc=doc)
+    # embed label + decision into report for a single serializable output
+    report.trust_label = label.to_dict()
+    report.decision = decision.to_dict()
+
+    return PipelineResult(report=report, sanitized=sanitized, label=label, decision=decision, doc=doc)
