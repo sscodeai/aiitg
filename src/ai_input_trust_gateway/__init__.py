@@ -29,6 +29,7 @@ __all__ = [
     "run_scan",
     "FormatRegistry",
     "scan_file",
+    "process_file",
 ]
 
 
