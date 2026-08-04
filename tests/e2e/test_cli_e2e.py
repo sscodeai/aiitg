@@ -6,7 +6,9 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
+from ai_input_trust_gateway.approval import ApprovalQueue
 from ai_input_trust_gateway.cli.app import app
+from ai_input_trust_gateway.pipeline import process_file
 from tests.fixtures import builders
 
 runner = CliRunner()
@@ -128,3 +130,53 @@ class TestCLITrust:
         result = runner.invoke(app, ["trust", str(f), "--format", "rich"])
         assert result.exit_code == 0
         assert "Trust label" in result.output
+
+
+class TestCLIPolicy:
+    def test_policy_benign_allow(self, tmp_path):
+        f = builders.build_docx_benign(tmp_path / "clean.docx")
+        result = runner.invoke(app, ["policy", str(f)])
+        assert result.exit_code == 0
+        assert '"action": "allow"' in result.output
+
+    def test_policy_evil_block(self, tmp_path):
+        f = builders.build_docx_with_zerowidth(tmp_path / "evil.docx")
+        result = runner.invoke(app, ["policy", str(f)])
+        assert result.exit_code == 0
+        assert '"action": "block"' in result.output
+
+    def test_policy_rich(self, tmp_path):
+        f = builders.build_docx_benign(tmp_path / "clean.docx")
+        result = runner.invoke(app, ["policy", str(f), "--format", "rich"])
+        assert result.exit_code == 0
+        assert "Policy decision" in result.output
+
+
+class TestCLIAudit:
+    def test_audit_roundtrip(self, tmp_path):
+        f = builders.build_docx_benign(tmp_path / "clean.docx")
+        log = tmp_path / "audit.jsonl"
+        runner.invoke(app, ["policy", str(f), "--audit", str(log)])
+        result = runner.invoke(app, ["audit", str(log)])
+        assert result.exit_code == 0
+        assert '"file": "clean.docx"' in result.output
+
+
+class TestCLIApprovals:
+    def test_approvals_flow(self, tmp_path):
+        f = builders.build_docx_with_zerowidth(tmp_path / "evil.docx")
+        queue = tmp_path / "approvals.jsonl"
+        result = process_file(str(f))
+        assert result.decision is not None
+        ApprovalQueue(str(queue)).request(report=result.report, decision=result.decision)
+
+        # list
+        r = runner.invoke(app, ["approvals", str(queue)])
+        assert r.exit_code == 0
+        assert '"status": "pending"' in r.output
+
+        # approve
+        entry = ApprovalQueue(str(queue)).pending()[0]
+        r2 = runner.invoke(app, ["approvals", str(queue), "--action", "approve", "--id", entry["id"]])
+        assert r2.exit_code == 0
+        assert "Approved" in r2.output
