@@ -80,18 +80,33 @@ aiitg scan report.docx --skip-detector DET-003
 aiitg list-detectors
 ```
 
-### M1: 净化 + 可信度标注
+### M2: 策略执行 + 审计 + 人工批准
 
 ```bash
-# 净化：剥离隐藏内容，输出可安全喂给 LLM 的文本
-aiitg sanitize report.docx                 # strip 模式（默认，删除隐藏内容）
-aiitg sanitize report.docx --mode redact   # redact 模式（替换为 [REDACTED]）
-aiitg sanitize report.xlsx --output clean.txt
+# 策略决策：allow / quarantine / human_approval / block
+aiitg policy report.docx --format rich
+aiitg policy report.docx --audit audit.jsonl      # 同时写审计日志
 
-# 可信度标注：safe / caution / dangerous
-aiitg trust report.docx                    # JSON
-aiitg trust report.pdf --format rich       # 终端可读
+# 审计日志（追加式 JSONL，可 SIEM/取证）
+aiitg audit audit.jsonl --format rich
+
+# 人工批准队列（block/quarantine 需要人审时）
+aiitg approvals queue.jsonl --format rich                    # 列出 pending
+aiitg approvals queue.jsonl --action approve --id <req-id>   # 批准
+aiitg approvals queue.jsonl --action reject --id <req-id>    # 拒绝
 ```
+
+### M2: Agent 对接（MCP server）
+
+```bash
+# 启动 MCP server（stdio，Claude Code / Codex / OpenCode 可直接配置为 MCP）
+aiitg-mcp
+# 或 HTTP transport
+aiitg-mcp --transport http
+```
+
+暴露 4 个工具：`scan_file` / `sanitize_file` / `trust_file` / `policy_file`。
+Agent 在把外部文档喂进上下文**之前**先调用 `policy_file`，非 `allow` 则阻断/净化/转人工。
 
 ### 库形态
 
@@ -103,14 +118,14 @@ report = scan_file("report.docx")
 for ev in report.evidence:
     print(ev.severity, ev.detector_id, ev.location.paragraph, ev.title)
 
-# M1 闭环：scan → sanitize → trust label
+# M2 闭环：scan → sanitize → trust label → policy decision
 result = process_file("report.docx")
-if result.is_safe:
+if result.is_blocked:
+    human_review(result.report)               # 阻断 / 转人工审批队列
+elif result.decision.action.value == "quarantine":
+    llm_context = result.sanitized.text       # 净化后喂给 LLM
+else:  # allow
     llm_context = result.sanitized.text       # 直接喂给 LLM
-elif not result.is_dangerous:  # caution
-    llm_context = result.sanitized.text       # 净化后已足够安全
-else:  # dangerous
-    human_review(result.report)               # 阻断 / 人工复核
 ```
 
 ## 测试
@@ -125,8 +140,8 @@ make typecheck   # mypy
 
 - **M0（已完成）**：隐藏内容审计 —— 4 格式 × 7 检测器 → 坐标级 JSON 证据
 - **M1（已完成）**：内容净化 + 可信度标注 —— `aiitg sanitize`（strip/redact）+ `aiitg trust`（safe/caution/dangerous）+ `process_file()` 闭环
-- **M2**：策略执行层（最小权限 / 人工批准 / 审计），二开 invariant 规则引擎
-- **长期**：标准化 "AI 输入信任网关"（gateway 形态 + MCP），对标 "AI 时代的杀毒软件/邮件网关"
+- **M2（已完成）**：策略执行层 —— `aiitg policy`（allow/quarantine/approval/block）+ 审计日志 + 人工批准队列 + **MCP server**（Agent 框架对接）
+- **长期**：标准化 "AI 输入信任网关"（多策略引擎 / 分布式审计 / 更多格式），对标 "AI 时代的杀毒软件/邮件网关"
 
 ## 论文坐标
 
