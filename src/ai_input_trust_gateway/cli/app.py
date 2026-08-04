@@ -8,9 +8,12 @@ from pathlib import Path
 import typer
 
 from ai_input_trust_gateway._version import __version__
+from ai_input_trust_gateway.approval import ApprovalQueue
+from ai_input_trust_gateway.audit import AuditLog
 from ai_input_trust_gateway.core.detector import default_detector_registry, run_scan
 from ai_input_trust_gateway.core.evidence import ScanReport, Severity
 from ai_input_trust_gateway.pipeline import process_file
+from ai_input_trust_gateway.policy import default_policy
 from ai_input_trust_gateway.reporters.json_reporter import JsonReporter
 from ai_input_trust_gateway.reporters.rich_reporter import RichReporter
 
@@ -137,6 +140,121 @@ def trust(
         import json
 
         typer.echo(json.dumps(label.to_dict(), ensure_ascii=False, indent=2))
+
+
+@app.command()
+def policy(
+    target: Path = typer.Argument(..., exists=True, resolve_path=True, help="File to evaluate against the policy."),
+    format: str = typer.Option("json", "--format", help="json | rich"),
+    audit: str = typer.Option("", "--audit", help="Append decision to audit log at this path."),
+) -> None:
+    """Evaluate a file against the default policy → allow/quarantine/approval/block."""
+    from rich.console import Console
+
+    result = process_file(str(target))
+    engine = default_policy()
+    decision = engine.evaluate(result.report, result.label.value)
+
+    if audit:
+        AuditLog(audit).record(report=result.report, decision=decision, sanitized=False)
+
+    console = Console()
+    color = {
+        "allow": "bold green",
+        "quarantine": "bold yellow",
+        "human_approval": "bold magenta",
+        "block": "bold red",
+    }[decision.action.value]
+    if format == "rich":
+        console.print(f"Policy decision: [{color}]{decision.action.value}[/] ({decision.rule_id})")
+        console.print(f"  reason: {decision.reason}")
+        summary = (
+            f"  trust: {result.label.value.value} (score {result.label.score:.2f})  "
+            f"risk: {result.report.risk_score:.2f}"
+        )
+        console.print(summary)
+    else:
+        import json
+
+        payload = {
+            "decision": decision.to_dict(),
+            "trust_label": result.label.to_dict(),
+            "risk_score": result.report.risk_score,
+            "file": result.report.file,
+        }
+        typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
+
+
+@app.command()
+def audit(
+    log: str = typer.Argument(..., help="Path to audit JSONL log."),
+    limit: int = typer.Option(50, "--limit", help="Entries to show."),
+    format: str = typer.Option("json", "--format", help="json | rich"),
+) -> None:
+    """Show recent audit log entries."""
+    entries = AuditLog(log).read(limit=limit)
+    if format == "rich":
+        from rich.console import Console
+
+        console = Console()
+        console.print(f"Audit log: {log} ({len(entries)} entries shown)")
+        for e in entries:
+            decision = (e.get("decision") or {}).get("action", "?")
+            console.print(
+                f"  [{e.get('timestamp', '')}] {e.get('file', '?')} "
+                f"risk={e.get('risk_score', '?')} label={((e.get('trust_label') or {}).get('value', '?'))} "
+                f"decision={decision}"
+            )
+    else:
+        import json
+
+        typer.echo(json.dumps(entries, ensure_ascii=False, indent=2))
+
+
+@app.command()
+def approvals(
+    queue: str = typer.Argument(..., help="Path to approval queue JSONL."),
+    action: str = typer.Option("list", "--action", help="list | approve | reject"),
+    id: str = typer.Option("", "--id", help="Request id (for approve/reject)."),
+    by: str = typer.Option("human", "--by", help="Who is deciding."),
+    format: str = typer.Option("json", "--format", help="json | rich"),
+) -> None:
+    """Manage the human-approval queue (list pending / approve / reject)."""
+    q = ApprovalQueue(queue)
+    if action == "list":
+        entries = q.pending()
+        if format == "rich":
+            from rich.console import Console
+
+            console = Console()
+            console.print(f"Pending approvals: {len(entries)}")
+            for e in entries:
+                console.print(f"  [{e.get('id')}] {e.get('file', '?')} — {e.get('reason', '?')}")
+        else:
+            import json
+
+            typer.echo(json.dumps(entries, ensure_ascii=False, indent=2))
+    elif action == "approve":
+        if not id:
+            typer.echo("Error: --id required for approve", err=True)
+            raise typer.Exit(code=2)
+        entry = q.approve(id, by=by)
+        if entry is None:
+            typer.echo(f"Error: no pending request with id {id}", err=True)
+            raise typer.Exit(code=1)
+        typer.echo(f"Approved {id}: {entry['file']}")
+    elif action == "reject":
+        if not id:
+            typer.echo("Error: --id required for reject", err=True)
+            raise typer.Exit(code=2)
+        entry = q.reject(id, by=by)
+        if entry is None:
+            typer.echo(f"Error: no pending request with id {id}", err=True)
+            raise typer.Exit(code=1)
+        typer.echo(f"Rejected {id}: {entry['file']}")
+    else:
+        typer.echo("Error: --action must be list|approve|reject", err=True)
+        raise typer.Exit(code=2)
 
 
 @app.command()
