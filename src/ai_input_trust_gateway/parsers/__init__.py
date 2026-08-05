@@ -13,6 +13,8 @@ from ai_input_trust_gateway.parsers import (
     html_parser,
     ooxml_raw,
     pdf_parser,
+    pptx_parser,
+    xls_parser,
     xlsx_parser,
 )
 
@@ -21,8 +23,10 @@ ALL_HANDLERS: list[FormatHandler] = [
     for cls in (
         docx_parser.DocxParser,
         xlsx_parser.XlsxParser,
+        xls_parser.XlsParser,
         pdf_parser.PdfParser,
         html_parser.HtmlParser,
+        pptx_parser.PptxParser,
     )
 ]
 
