@@ -148,8 +148,8 @@ def compute_trust_label(report: ScanReport, doc_text: str = "") -> TrustLabel:
     # must never yield "safe". Major concealment (HIGH/CRITICAL: structure ≤ 0.2)
     # → never above dangerous threshold; minor concealment → never above caution.
     if structure < 1.0:
-        if structure <= 0.2:
-            score = min(score, 0.4)  # never above dangerous threshold
+        if structure <= 0.2 + 1e-9:
+            score = min(score, 0.39)  # never above dangerous threshold (0.4)
         else:
             score = min(score, 0.6)  # never above caution threshold
 
