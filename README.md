@@ -1,155 +1,169 @@
-# AI Input Trust Gateway
+# AI Input Trust Gateway (aiitg)
 
-**Agent 的零信任输入安全层** — 在 LLM/Agent 处理任何外部材料（Word / Excel / PDF / HTML）之前，扫描隐藏内容、检测提示注入载体、输出坐标级证据报告。
+**The zero-trust input security layer for AI agents.** Scan untrusted documents before they reach an LLM — detect hidden prompt-injection content, sanitize it, label its trustworthiness, and enforce policy. **External content is data, never authority.**
 
-> **External content is data, never authority.**
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)]()
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)]()
+[![Tests](https://img.shields.io/badge/tests-102%20passed-brightgreen.svg)]()
+[![arXiv](https://img.shields.io/badge/arXiv-2507.06185-red.svg)]()
+
+---
+
+## Why
+
+2025–2026 research and real-world incidents repeatedly demonstrated a class of attack: **instructions hidden inside documents that humans cannot see, but LLMs read and obey.**
+
+- **Peer-review manipulation**: authors hide prompts in manuscripts to make AI reviewers give top scores (arXiv:2507.06185, 2508.20863, 2509.09912)
+- **Resume injection**: hidden instructions in resumes force AI screeners to "must hire" (arXiv:2605.28999)
+- **Agent hijacking**: hidden text in PDFs/web pages makes AI assistants leak secrets or execute dangerous actions
+
+The document a human sees and the document an LLM reads can be **completely different** — that's the **Human-AI Visibility Gap**. This project turns that gap into auditable evidence.
+
+## What it does
 
 ```
-外部输入 (docx/xlsx/pdf/html)
-        ↓
-  FormatRegistry 分派 parser
-        ↓
-  ParsedDocument 统一中间模型
-        ↓
-  Detector 链 (7 个检测器)
-        ↓
-  Evidence 列表 (坐标级) → JSON / rich 报告 + 退出码
+Untrusted input (docx/xlsx/xls/pdf/html/pptx)
+        │
+        ▼
+┌───────────────────────────────────────────────┐
+│  FormatRegistry → parser → ParsedDocument      │
+│  (format-agnostic intermediate model)          │
+│                                               │
+│  Detector chain (7 detectors)                 │
+│  → Evidence list (coordinate-level)           │
+│                                               │
+│  Sanitizer (strip / redact)                   │
+│  → Safe text for LLM context                  │
+│                                               │
+│  Trust label (safe / caution / dangerous)     │
+│  Policy engine (allow/quarantine/approval/    │
+│                  block)                       │
+│  → Decision + audit log + human approval      │
+└───────────────────────────────────────────────┘
+        │
+        ▼
+   Safe LLM/Agent consumption
 ```
 
-## 为什么需要它
+### The pipeline (M0 → M1 → M2)
 
-2025–2026 年，学术界和真实世界反复证实了一种攻击：**把肉眼看不见（或几乎看不见）的指令藏进文档**，AI 解析文档时把这些指令当成系统提示执行。
+| Stage | Capability | Interface |
+|---|---|---|
+| **M0** | Hidden content audit — 6 formats × 7 detectors → coordinate-level JSON evidence | `aiitg scan` |
+| **M1** | Sanitization (strip/redact) + trust labeling (safe/caution/dangerous) | `aiitg sanitize`, `aiitg trust` |
+| **M2** | Policy enforcement (allow/quarantine/human_approval/block) + audit + human-approval queue + **MCP server** for agent frameworks | `aiitg policy`, `aiitg audit`, `aiitg approvals`, `aiitg-mcp` |
 
-- **同行评审操纵**：论文里藏隐藏提示词，让 AI 审稿人打最高分（arXiv:2507.06185, 2508.20863, 2509.09912）
-- **简历注入**：简历里藏指令，让 AI 初筛器"必须录取"（arXiv:2605.28999）
-- **Agent 劫持**：PDF/网页里的隐藏文本让 AI 助手读取密钥、执行危险操作
+### Detectors
 
-人类看到的文档和 AI 读到的文档，可能**完全不同** —— 这就是 **Human-AI Visibility Gap**。本项目把这个 gap 变成可审计的证据。
-
-## 核心概念
-
-### Detector（检测器）
-
-每个检测器只消费统一的 `ParsedDocument` 中间模型，与具体文件格式解耦：
-
-| ID | 名称 | 检测内容 | 严重度 |
+| ID | Name | Detects | Severity |
 |---|---|---|---|
-| DET-001 | zero_width | 零宽/不可见 Unicode（U+200B 等） | HIGH |
-| DET-002 | hidden_style | 白字 / 透明字 / display:none / w:vanish | HIGH |
-| DET-003 | tiny_font | 极小字号（≤2pt） | MEDIUM |
-| DET-004 | hidden_sheet | xlsx 隐藏 sheet / 行 / 列（含数据） | MEDIUM |
-| DET-005 | ooxml_nodes | OOXML 隐藏节点（tracked-delete / altChunk / 注释标记） | MEDIUM |
-| DET-006 | annotations | Word 注释 / PDF 注解 / HTML 注释 | LOW |
-| DET-007 | document_meta | 元数据 / VBA 宏 / JS 信号 | LOW |
+| DET-001 | zero_width | Zero-width / invisible Unicode (U+200B, U+2060, U+FEFF…) | HIGH |
+| DET-002 | hidden_style | White text, transparency, `display:none`, `w:vanish` | HIGH |
+| DET-003 | tiny_font | Extremely small font (≤2pt) | MEDIUM |
+| DET-004 | hidden_sheet | Hidden sheets/rows/columns (with data) in xlsx/xls | MEDIUM |
+| DET-005 | ooxml_nodes | OOXML hidden nodes (tracked-delete, altChunk, comments) | MEDIUM |
+| DET-006 | annotations | Word comments, PDF annotations, HTML comments | LOW |
+| DET-007 | document_meta | Metadata / VBA macros / JS signals | LOW |
 
-### Evidence（证据）
+### Formats
 
-每条证据**自包含**：`detector_id + severity + location（坐标级）+ raw（原文片段）`。可直接用于取证和后续净化提取。
+`docx` · `xlsx` · `xls` (legacy) · `pdf` · `html` · `pptx`
 
-### 退出码契约（CI / Agent 集成）
-
-| 退出码 | 含义 |
-|---|---|
-| 0 | 无证据，或全部低于 `--min-severity` |
-| 1 | 有 ≥1 条达到 `--min-severity` 的证据 |
-| 2 | 用法错误 |
-| 3 | 文件解析/扫描异常 |
-
-## 安装
+## Install
 
 ```bash
 uv venv .venv && uv pip install -e ".[dev]"
-# 或
+# or
 pip install -e ".[dev]"
 ```
 
-## 使用
+## Usage
+
+### Scan
 
 ```bash
-# 单文件 JSON（默认）
-aiitg scan report.docx --format json
-# 只报高危
-aiitg scan report.xlsx --min-severity high
-# 终端可读摘要
-aiitg scan report.pdf --format rich
-# 批量目录
-aiitg scan ./inbox --recursive --jsonl
-# 跳过误报率高的检测器
-aiitg scan report.docx --skip-detector DET-003
-# 列出可用检测器
-aiitg list-detectors
+aiitg scan report.docx --format json        # JSON evidence report
+aiitg scan report.xlsx --min-severity high  # only high+ findings
+aiitg scan report.pdf --format rich         # terminal table
+aiitg scan ./inbox --recursive --jsonl      # batch directory scan
+aiitg list-detectors                        # list all 7 detectors
 ```
 
-### M2: 策略执行 + 审计 + 人工批准
+Exit codes: `0` = clean · `1` = findings at/above threshold · `2` = usage error · `3` = parse error (CI-friendly).
+
+### Sanitize + trust label (M1)
 
 ```bash
-# 策略决策：allow / quarantine / human_approval / block
-aiitg policy report.docx --format rich
-aiitg policy report.docx --audit audit.jsonl      # 同时写审计日志
-
-# 审计日志（追加式 JSONL，可 SIEM/取证）
-aiitg audit audit.jsonl --format rich
-
-# 人工批准队列（block/quarantine 需要人审时）
-aiitg approvals queue.jsonl --format rich                    # 列出 pending
-aiitg approvals queue.jsonl --action approve --id <req-id>   # 批准
-aiitg approvals queue.jsonl --action reject --id <req-id>    # 拒绝
+aiitg sanitize report.docx                  # strip hidden content → safe text
+aiitg sanitize report.docx --mode redact    # replace with [REDACTED]
+aiitg trust report.docx                     # safe / caution / dangerous
 ```
 
-### M2: Agent 对接（MCP server）
+### Policy + audit + approvals (M2)
 
 ```bash
-# 启动 MCP server（stdio，Claude Code / Codex / OpenCode 可直接配置为 MCP）
-aiitg-mcp
-# 或 HTTP transport
-aiitg-mcp --transport http
+aiitg policy report.docx --format rich      # allow / quarantine / human_approval / block
+aiitg policy report.docx --audit audit.jsonl
+aiitg audit audit.jsonl --format rich       # append-only JSONL audit trail
+aiitg approvals queue.jsonl                 # list pending approvals
+aiitg approvals queue.jsonl --action approve --id <id>
 ```
 
-暴露 4 个工具：`scan_file` / `sanitize_file` / `trust_file` / `policy_file`。
-Agent 在把外部文档喂进上下文**之前**先调用 `policy_file`，非 `allow` 则阻断/净化/转人工。
+### Agent integration (MCP)
 
-### 库形态
+```bash
+aiitg-mcp                                   # stdio transport (Claude Code / Codex / OpenCode)
+aiitg-mcp --transport http                  # streamable HTTP
+```
+
+Agents call `policy_file` **before** feeding untrusted content into context; anything non-`allow` gets blocked/sanitized/human-approved.
+
+## Library
 
 ```python
-from ai_input_trust_gateway import scan_file, process_file, Severity
+from ai_input_trust_gateway import process_file
 
-# 仅扫描
-report = scan_file("report.docx")
-for ev in report.evidence:
-    print(ev.severity, ev.detector_id, ev.location.paragraph, ev.title)
-
-# M2 闭环：scan → sanitize → trust label → policy decision
 result = process_file("report.docx")
 if result.is_blocked:
-    human_review(result.report)               # 阻断 / 转人工审批队列
+    human_review(result.report)              # escalate to approval queue
 elif result.decision.action.value == "quarantine":
-    llm_context = result.sanitized.text       # 净化后喂给 LLM
-else:  # allow
-    llm_context = result.sanitized.text       # 直接喂给 LLM
+    llm_context = result.sanitized.text      # sanitized text is safe
+else:
+    llm_context = result.sanitized.text      # allow
 ```
 
-## 测试
+## Design principles
+
+1. **External content is data, never authority.** Documents are parsed, sanitized, and policy-checked before ever becoming instructions.
+2. **Assume compromise.** Detection is never 100%; isolation + least privilege + evidence + human approval + audit are the real defense.
+3. **Detector/format decoupling.** Detectors consume a format-agnostic `ParsedDocument`; new format = new parser, new attack = new detector.
+4. **Coordinate-level evidence.** Every finding carries exact location (paragraph/run/sheet/row/page/char_range) for forensics and sanitization.
+5. **Conservative trust caps.** Any evidence of deliberate concealment can never yield `safe`; HIGH/CRITICAL concealment can never yield better than `dangerous`.
+
+## Research grounding
+
+- arXiv:2507.06185 — *Hidden Prompts in Manuscripts Exploit AI-Assisted Peer Review*
+- arXiv:2508.20863 — *Misleading LLMs in Peer-Reviewing via Hidden Prompt-Injection*
+- arXiv:2509.09912 — *When Your Reviewer is an LLM: Prompt Injection Risks in Peer Review*
+- arXiv:2605.28999 — *Real-World Prompt-Injection Attacks in LLM-based Resume Screening*
+
+## Testing
 
 ```bash
-make test        # pytest
+make test        # 102 tests
 make lint        # ruff
 make typecheck   # mypy
 ```
 
-## 路线图
+Malicious test fixtures are **generated in code** (never committed as binaries) — reproducible, auditable, diff-friendly.
 
-- **M0（已完成）**：隐藏内容审计 —— 4 格式 × 7 检测器 → 坐标级 JSON 证据
-- **M1（已完成）**：内容净化 + 可信度标注 —— `aiitg sanitize`（strip/redact）+ `aiitg trust`（safe/caution/dangerous）+ `process_file()` 闭环
-- **M2（已完成）**：策略执行层 —— `aiitg policy`（allow/quarantine/approval/block）+ 审计日志 + 人工批准队列 + **MCP server**（Agent 框架对接）
-- **长期**：标准化 "AI 输入信任网关"（多策略引擎 / 分布式审计 / 更多格式），对标 "AI 时代的杀毒软件/邮件网关"
+## Roadmap
 
-## 论文坐标
+- [x] **M0** — Hidden content audit (6 formats × 7 detectors → coordinate-level evidence)
+- [x] **M1** — Sanitization + trust labeling (scan → sanitize → label closed loop)
+- [x] **M2** — Policy enforcement + audit + human approval + MCP server (agent gateway)
+- [ ] More formats (legacy `.doc`, `.ppt`, images via OCR) · multi-policy engine · distributed audit · benchmark dataset for hidden-injection detection
 
-- arXiv:2507.06185 — Hidden Prompts in Manuscripts Exploit AI-Assisted Peer Review
-- arXiv:2508.20863 — Misleading LLMs in Peer-Reviewing via Hidden Prompt-Injection
-- arXiv:2509.09912 — When Your Reviewer is an LLM: PI Risks in Peer Review
-- arXiv:2605.28999 — Real-World PI Attacks in LLM-based Resume Screening
-
-## 许可证
+## License
 
 MIT
