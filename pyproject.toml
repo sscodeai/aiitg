@@ -29,6 +29,8 @@ dependencies = [
     "typer>=0.12",
     "rich>=13",
     "mcp<2",
+    "python-pptx>=1.0",
+    "xlrd>=2.0",
 ]
 
 [project.optional-dependencies]
