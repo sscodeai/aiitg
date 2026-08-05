@@ -19,6 +19,12 @@
 
 The document a human sees and the document an LLM reads can be **completely different** — that's the **Human-AI Visibility Gap**. This project turns that gap into auditable evidence.
 
+## Demo
+
+![aiitg demo](assets/aiitg-demo.gif)
+
+*Scan → trust label → sanitize → policy. A document with a hidden zero-width instruction is detected, labeled `dangerous`, sanitized, and blocked by policy before it can reach an LLM.*
+
 ## What it does
 
 ```
