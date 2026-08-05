@@ -24,7 +24,7 @@ class DocumentMetaDetector(Detector):
     id = "DET-007"
     name = "document_meta"
     description = "Suspicious document metadata / macro / VBA / embedded-object signals."
-    supported_kinds = frozenset({"docx", "xlsx", "pdf", "html"})
+    supported_kinds = frozenset({"docx", "xlsx", "pdf", "html", "pptx", "xls"})
     default_severity = Severity.LOW
 
     def scan(self, doc: ParsedDocument) -> list[Evidence]:

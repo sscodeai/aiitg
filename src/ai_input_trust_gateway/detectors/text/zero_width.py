@@ -64,7 +64,7 @@ class ZeroWidthDetector(Detector):
     id = "DET-001"
     name = "zero_width"
     description = "Zero-width / invisible Unicode characters that a human reader never sees but LLMs tokenize."
-    supported_kinds = frozenset({"docx", "xlsx", "pdf", "html"})
+    supported_kinds = frozenset({"docx", "xlsx", "pdf", "html", "pptx", "xls"})
     default_severity = Severity.HIGH
 
     def scan(self, doc: ParsedDocument) -> list[Evidence]:

@@ -16,7 +16,7 @@ class HiddenSheetDetector(Detector):
     id = "DET-004"
     name = "hidden_sheet"
     description = "Hidden sheets / rows / columns in xlsx that contain data (invisible but machine-readable)."
-    supported_kinds = frozenset({"xlsx"})
+    supported_kinds = frozenset({"xlsx", "xls"})
     default_severity = Severity.MEDIUM
 
     def scan(self, doc: ParsedDocument) -> list[Evidence]:

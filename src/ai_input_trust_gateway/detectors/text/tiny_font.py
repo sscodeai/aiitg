@@ -18,7 +18,7 @@ class TinyFontDetector(Detector):
         "Text rendered at extremely small font size (default ≤2pt) — hard for "
         "humans to read, machine-readable."
     )
-    supported_kinds = frozenset({"docx", "xlsx", "pdf", "html"})
+    supported_kinds = frozenset({"docx", "xlsx", "pdf", "html", "pptx", "xls"})
     default_severity = Severity.MEDIUM
 
     def __init__(self, min_size_pt: float = 2.0) -> None:
