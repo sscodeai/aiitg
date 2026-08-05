@@ -28,6 +28,13 @@ RISKY_PATTERNS: dict[str, list[str]] = {
         "mc:AlternateContent", "mc:Choice", "mc:Fallback",
         "x14:conditionalFormatting", "v:alternateContent",
     ],
+    "ppt/slides/slide*.xml": [
+        "mc:AlternateContent", "mc:Choice", "mc:Fallback",
+        "a:comment", "p:comment",
+    ],
+    "ppt/notesSlides/notesSlide*.xml": [
+        "mc:AlternateContent", "mc:Choice", "mc:Fallback",
+    ],
 }
 
 # Also scan any part for common hidden markers regardless of name
@@ -42,7 +49,7 @@ class OOXMLNodesDetector(Detector):
     id = "DET-005"
     name = "ooxml_nodes"
     description = _DET_DESC
-    supported_kinds = frozenset({"docx", "xlsx"})
+    supported_kinds = frozenset({"docx", "xlsx", "pptx"})
     default_severity = Severity.MEDIUM
 
     def scan(self, doc: ParsedDocument) -> list[Evidence]:

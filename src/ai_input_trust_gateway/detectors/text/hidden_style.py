@@ -21,7 +21,7 @@ class HiddenStyleDetector(Detector):
         "Text hidden via styling: white/background color, transparency, "
         "display:none, w:vanish."
     )
-    supported_kinds = frozenset({"docx", "xlsx", "pdf", "html"})
+    supported_kinds = frozenset({"docx", "xlsx", "pdf", "html", "pptx", "xls"})
     default_severity = Severity.HIGH
 
     def scan(self, doc: ParsedDocument) -> list[Evidence]:

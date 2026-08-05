@@ -203,3 +203,60 @@ def build_html_tiny_font(path: Path) -> Path:
         encoding="utf-8",
     )
     return path
+
+
+def build_pptx_benign(path: Path) -> Path:
+    """A clean PPTX with one visible text box."""
+    from pptx import Presentation
+    from pptx.util import Inches
+
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[5])  # blank
+    box = slide.shapes.add_textbox(Inches(1), Inches(1), Inches(5), Inches(1))
+    box.text = "This is a benign slide."
+    prs.save(str(path))
+    return path
+
+
+def build_pptx_white_text(path: Path) -> Path:
+    """A PPTX with white text on a slide (hidden from human view)."""
+    from pptx import Presentation
+    from pptx.dml.color import RGBColor
+    from pptx.util import Inches
+
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[5])
+    box = slide.shapes.add_textbox(Inches(1), Inches(1), Inches(5), Inches(1))
+    tf = box.text_frame
+    tf.text = "white hidden instruction"
+    for para in tf.paragraphs:
+        for run in para.runs:
+            run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+    prs.save(str(path))
+    return path
+
+
+def build_pptx_notes(path: Path, notes_text: str = "SECRET INSTRUCTIONS IN NOTES") -> Path:
+    """A PPTX with speaker notes (machine-readable, human-invisible)."""
+    from pptx import Presentation
+    from pptx.util import Inches
+
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[5])
+    box = slide.shapes.add_textbox(Inches(1), Inches(1), Inches(5), Inches(1))
+    box.text = "Visible slide content"
+    slide.notes_slide.notes_text_frame.text = notes_text
+    prs.save(str(path))
+    return path
+
+
+def build_xls_benign(path: Path) -> Path:
+    """A clean legacy .xls file."""
+    import xlwt
+
+    wb = xlwt.Workbook()
+    ws = wb.add_sheet("Sheet1")
+    ws.write(0, 0, "hello")
+    ws.write(0, 1, "world")
+    wb.save(str(path))
+    return path
