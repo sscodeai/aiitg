@@ -9,8 +9,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from ai_input_trust_gateway.core.detector import default_detector_registry, run_scan  # noqa: E402
-from ai_input_trust_gateway.core.evidence import ScanReport  # noqa: E402
+from aiitg.core.detector import default_detector_registry, run_scan  # noqa: E402
+from aiitg.core.evidence import ScanReport  # noqa: E402
 
 
 @pytest.fixture

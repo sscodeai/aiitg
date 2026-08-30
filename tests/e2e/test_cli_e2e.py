@@ -6,9 +6,9 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from ai_input_trust_gateway.approval import ApprovalQueue
-from ai_input_trust_gateway.cli.app import app
-from ai_input_trust_gateway.pipeline import process_file
+from aiitg.approval import ApprovalQueue
+from aiitg.cli.app import app
+from aiitg.pipeline import process_file
 from tests.fixtures import builders
 
 runner = CliRunner()

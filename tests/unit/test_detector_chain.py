@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from ai_input_trust_gateway.core.detector import Detector, DetectorRegistry
-from ai_input_trust_gateway.core.document import ParsedDocument
-from ai_input_trust_gateway.core.errors import ScanError
-from ai_input_trust_gateway.core.evidence import Evidence, Location, Severity
-from ai_input_trust_gateway.core.registry import FormatHandler, FormatRegistry
+from aiitg.core.detector import Detector, DetectorRegistry
+from aiitg.core.document import ParsedDocument
+from aiitg.core.errors import ScanError
+from aiitg.core.evidence import Evidence, Location, Severity
+from aiitg.core.registry import FormatHandler, FormatRegistry
 
 
 class DummyDetector(Detector):

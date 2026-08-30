@@ -9,6 +9,23 @@
 
 ---
 
+## Why the name
+
+**aiitg** stands for **A**I **I**nput **T**rust **G**ateway — and every letter is a design decision:
+
+| Letter | Meaning | Why it matters |
+|---|---|---|
+| **A**I | The problem space is AI/LLM/Agent | This is security *for* AI, not generic document tooling |
+| **I**nput | We guard the **input** side | Most AI security focuses on outputs/alignment; the input (untrusted documents) is the attacker's real entry point |
+| **T**rust | We make trust **explicit and measurable** | A document isn't trusted by default — it earns a `safe` / `caution` / `dangerous` label with evidence |
+| **G**ateway | We sit **between** the document and the model | Like an email gateway filters mail before it reaches the inbox, aiitg filters content before it reaches the LLM's context |
+
+The philosophy in one line: **external content is data, never authority.** A document should never be able to *instruct* an AI — it should only ever be *read* by an AI, after being checked.
+
+That's also why the tool is deliberately named as a gateway, not a scanner: a scanner *reports*; a gateway *enforces*. aiitg doesn't just tell you a document is dangerous — it blocks it, sanitizes it, requires human approval, and audits every decision.
+
+---
+
 ## Why
 
 2025–2026 research and real-world incidents repeatedly demonstrated a class of attack: **instructions hidden inside documents that humans cannot see, but LLMs read and obey.**
@@ -127,7 +144,7 @@ Agents call `policy_file` **before** feeding untrusted content into context; any
 ## Library
 
 ```python
-from ai_input_trust_gateway import process_file
+from aiitg import process_file
 
 result = process_file("report.docx")
 if result.is_blocked:

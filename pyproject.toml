@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "ai-input-trust-gateway"
+name = "aiitg"
 version = "0.1.0"
 description = "AI Input Trust Gateway — hidden content auditor for documents fed to LLMs/Agents"
 readme = "README.md"
@@ -45,11 +45,11 @@ dev = [
 ]
 
 [project.scripts]
-aiitg = "ai_input_trust_gateway.cli.main:main"
-aiitg-mcp = "ai_input_trust_gateway.mcp_server:main"
+aiitg = "aiitg.cli.main:main"
+aiitg-mcp = "aiitg.mcp_server:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/ai_input_trust_gateway"]
+packages = ["src/aiitg"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

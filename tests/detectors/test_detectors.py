@@ -1,6 +1,6 @@
 """Detector tests: one file per detector, builder-generated malicious samples."""
 
-from ai_input_trust_gateway.core.evidence import Severity
+from aiitg.core.evidence import Severity
 from tests.fixtures import builders
 
 
