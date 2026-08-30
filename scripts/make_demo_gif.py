@@ -13,7 +13,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-REPO = Path("/srv/hermes/workspaces/ai-input-trust-gateway")
+REPO = Path(__file__).resolve().parent.parent  # repo root (scripts/..)
 VENV_PY = REPO / ".venv" / "bin" / "python"
 ENV = {"PYTHONPATH": str(REPO / "src")}
 
@@ -47,7 +47,7 @@ def load_font(size: int):
 
 def run_cli(args: list[str]) -> tuple[str, int]:
     r = subprocess.run(
-        [str(VENV_PY), "-m", "ai_input_trust_gateway.cli.main", *args],
+        [str(VENV_PY), "-m", "aiitg.cli.main", *args],
         capture_output=True, text=True, env=ENV, cwd=str(REPO),
     )
     # strip runpy warnings (they pollute stdout)

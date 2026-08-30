@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sys
 
-from ai_input_trust_gateway import Severity, scan_file
+from aiitg import Severity, scan_file
 
 
 def main(path: str) -> None:

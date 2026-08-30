@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from ai_input_trust_gateway.approval import ApprovalQueue
-from ai_input_trust_gateway.audit import AuditLog
-from ai_input_trust_gateway.pipeline import process_file
-from ai_input_trust_gateway.policy import (
+from aiitg.approval import ApprovalQueue
+from aiitg.audit import AuditLog
+from aiitg.pipeline import process_file
+from aiitg.policy import (
     DecisionAction,
     PolicyEngine,
     PolicyRule,
@@ -13,7 +13,7 @@ from ai_input_trust_gateway.policy import (
     _label_is,
     _risk_at_least,
 )
-from ai_input_trust_gateway.trust_label import TrustLabelValue
+from aiitg.trust_label import TrustLabelValue
 from tests.fixtures import builders
 
 
@@ -54,7 +54,7 @@ class TestPolicyEngine:
                 PolicyRule(id="R2", action=DecisionAction.ALLOW, reason="r2", condition=lambda *_: True),
             ]
         )
-        from ai_input_trust_gateway.core.evidence import ScanReport
+        from aiitg.core.evidence import ScanReport
 
         report = ScanReport(file="f", kind="docx")
         d = engine.evaluate(report, TrustLabelValue.SAFE)
@@ -62,7 +62,7 @@ class TestPolicyEngine:
         assert d.action == DecisionAction.BLOCK
 
     def test_condition_helpers(self):
-        from ai_input_trust_gateway.core.evidence import Evidence, ScanReport, Severity
+        from aiitg.core.evidence import Evidence, ScanReport, Severity
 
         report = ScanReport(
             file="f",

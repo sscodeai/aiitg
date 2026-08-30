@@ -6,9 +6,9 @@ import json
 
 import pytest
 
-from ai_input_trust_gateway.core.document import ParsedDocument, TextParagraph, TextRun
-from ai_input_trust_gateway.core.errors import ScanError
-from ai_input_trust_gateway.core.evidence import (
+from aiitg.core.document import ParsedDocument, TextParagraph, TextRun
+from aiitg.core.errors import ScanError
+from aiitg.core.evidence import (
     Evidence,
     Location,
     ScanReport,

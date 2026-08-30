@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from ai_input_trust_gateway.pipeline import process_file
-from ai_input_trust_gateway.sanitize import INVISIBLE_RE, Sanitizer
-from ai_input_trust_gateway.trust_label import TrustLabelValue, compute_trust_label
+from aiitg.pipeline import process_file
+from aiitg.sanitize import INVISIBLE_RE, Sanitizer
+from aiitg.trust_label import TrustLabelValue, compute_trust_label
 from tests.fixtures import builders
 
 
@@ -12,7 +12,7 @@ class TestSanitizer:
     def test_strip_zerowidth_docx(self, scan_file, tmp_path):
         f = builders.build_docx_with_zerowidth(tmp_path / "zw.docx")
         report = scan_file(f)
-        from ai_input_trust_gateway.core.registry import default_format_registry
+        from aiitg.core.registry import default_format_registry
 
         doc = default_format_registry().parse(f)
         result = Sanitizer(mode="strip").sanitize(doc, report.evidence)
@@ -22,7 +22,7 @@ class TestSanitizer:
     def test_redact_hidden_style(self, scan_file, tmp_path):
         f = builders.build_html_hidden_style(tmp_path / "h.html")
         report = scan_file(f)
-        from ai_input_trust_gateway.core.registry import default_format_registry
+        from aiitg.core.registry import default_format_registry
 
         doc = default_format_registry().parse(f)
         result = Sanitizer(mode="redact").sanitize(doc, report.evidence)
@@ -33,7 +33,7 @@ class TestSanitizer:
     def test_strip_hidden_sheet(self, scan_file, tmp_path):
         f = builders.build_xlsx_hidden_sheet(tmp_path / "hs.xlsx")
         report = scan_file(f)
-        from ai_input_trust_gateway.core.registry import default_format_registry
+        from aiitg.core.registry import default_format_registry
 
         doc = default_format_registry().parse(f)
         result = Sanitizer(mode="strip").sanitize(doc, report.evidence)
@@ -43,7 +43,7 @@ class TestSanitizer:
     def test_removed_count(self, scan_file, tmp_path):
         f = builders.build_xlsx_hidden_sheet(tmp_path / "hs.xlsx")
         report = scan_file(f)
-        from ai_input_trust_gateway.core.registry import default_format_registry
+        from aiitg.core.registry import default_format_registry
 
         doc = default_format_registry().parse(f)
         result = Sanitizer(mode="strip").sanitize(doc, report.evidence)
@@ -52,7 +52,7 @@ class TestSanitizer:
     def test_benign_passthrough(self, scan_file, tmp_path):
         f = builders.build_docx_benign(tmp_path / "clean.docx")
         report = scan_file(f)
-        from ai_input_trust_gateway.core.registry import default_format_registry
+        from aiitg.core.registry import default_format_registry
 
         doc = default_format_registry().parse(f)
         result = Sanitizer(mode="strip").sanitize(doc, report.evidence)

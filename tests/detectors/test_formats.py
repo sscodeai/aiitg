@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ai_input_trust_gateway.core.registry import default_format_registry
+from aiitg.core.registry import default_format_registry
 from tests.fixtures import builders
 
 
