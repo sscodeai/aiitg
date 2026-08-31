@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -44,6 +45,15 @@ class TestCLIScan:
         result = _run_scan(f)
         assert result.exit_code == 3, result.output
 
+    def test_parse_error_exit_3_and_json(self, tmp_path):
+        f = tmp_path / "bad.docx"
+        f.write_bytes(b"not a real docx package")
+        result = _run_scan(f, "--format", "json")
+        assert result.exit_code == 3, result.output
+        payload = json.loads(result.output)
+        assert payload["scan"]["status"] == "error"
+        assert payload["scan"]["error"]["kind"] == "parse_failed"
+
     def test_rich_format(self, tmp_path):
         f = builders.build_docx_with_zerowidth(tmp_path / "evil.docx")
         result = _run_scan(f, "--format", "rich")
@@ -57,6 +67,17 @@ class TestCLIScan:
         builders.build_docx_benign(d / "b.docx")
         result = _run_scan(d, "--recursive")
         assert result.exit_code == 1  # at least one file found something
+
+    def test_directory_jsonl_is_one_json_object_per_line(self, tmp_path):
+        d = tmp_path / "inbox"
+        d.mkdir()
+        builders.build_docx_with_zerowidth(d / "a.docx")
+        builders.build_docx_benign(d / "b.docx")
+        result = _run_scan(d, "--recursive", "--jsonl")
+        assert result.exit_code == 1
+        lines = result.output.splitlines()
+        assert len(lines) == 2
+        assert [json.loads(line)["scan"]["file"] for line in lines] == ["a.docx", "b.docx"]
 
     def test_skip_detector(self, tmp_path):
         f = builders.build_docx_with_zerowidth(tmp_path / "evil.docx")
@@ -144,6 +165,15 @@ class TestCLIPolicy:
         result = runner.invoke(app, ["policy", str(f)])
         assert result.exit_code == 0
         assert '"action": "block"' in result.output
+
+    def test_policy_parse_error_blocks_without_traceback(self, tmp_path):
+        f = tmp_path / "bad.docx"
+        f.write_bytes(b"not a real docx package")
+        result = runner.invoke(app, ["policy", str(f)])
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.output)
+        assert payload["decision"]["action"] == "block"
+        assert payload["trust_label"]["value"] == "dangerous"
 
     def test_policy_rich(self, tmp_path):
         f = builders.build_docx_benign(tmp_path / "clean.docx")

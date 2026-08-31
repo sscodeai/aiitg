@@ -81,7 +81,7 @@ def scan(
         for f in files:
             report, code = _scan_one(f, sev, skip)
             if jsonl:
-                sys.stdout.write(report.to_json() + "\n")
+                sys.stdout.write(report.to_json(indent=None) + "\n")
             else:
                 _emit(report, format, output, file=True)
             overall_exit = max(overall_exit, code)

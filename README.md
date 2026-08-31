@@ -30,8 +30,8 @@ That's also why the tool is deliberately named as a gateway, not a scanner: a sc
 
 2025–2026 research and real-world incidents repeatedly demonstrated a class of attack: **instructions hidden inside documents that humans cannot see, but LLMs read and obey.**
 
-- **Peer-review manipulation**: authors hide prompts in manuscripts to make AI reviewers give top scores (arXiv:2507.06185, 2508.20863, 2509.09912)
-- **Resume injection**: hidden instructions in resumes force AI screeners to "must hire" (arXiv:2605.28999)
+- **Peer-review manipulation**: authors hide prompts in manuscripts to make AI reviewers give top scores ([arXiv:2507.06185](https://arxiv.org/abs/2507.06185), [2508.20863](https://arxiv.org/abs/2508.20863), [2509.09912](https://arxiv.org/abs/2509.09912))
+- **Resume injection**: hidden instructions in resumes force AI screeners to "must hire" ([arXiv:2605.28999](https://arxiv.org/abs/2605.28999))
 - **Agent hijacking**: hidden text in PDFs/web pages makes AI assistants leak secrets or execute dangerous actions
 
 The document a human sees and the document an LLM reads can be **completely different** — that's the **Human-AI Visibility Gap**. This project turns that gap into auditable evidence.
@@ -97,7 +97,7 @@ Untrusted input (docx/xlsx/xls/pdf/html/pptx)
 ```bash
 uv venv .venv && uv pip install -e ".[dev]"
 # or
-pip install -e ".[dev]"
+python3.11 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 ```
 
 ## Usage
@@ -108,7 +108,7 @@ pip install -e ".[dev]"
 aiitg scan report.docx --format json        # JSON evidence report
 aiitg scan report.xlsx --min-severity high  # only high+ findings
 aiitg scan report.pdf --format rich         # terminal table
-aiitg scan ./inbox --recursive --jsonl      # batch directory scan
+aiitg scan ./inbox --recursive --jsonl      # batch directory scan, one compact JSON object per line
 aiitg list-detectors                        # list all 7 detectors
 ```
 
@@ -165,10 +165,10 @@ else:
 
 ## Research grounding
 
-- arXiv:2507.06185 — *Hidden Prompts in Manuscripts Exploit AI-Assisted Peer Review*
-- arXiv:2508.20863 — *Misleading LLMs in Peer-Reviewing via Hidden Prompt-Injection*
-- arXiv:2509.09912 — *When Your Reviewer is an LLM: Prompt Injection Risks in Peer Review*
-- arXiv:2605.28999 — *Real-World Prompt-Injection Attacks in LLM-based Resume Screening*
+- [arXiv:2507.06185](https://arxiv.org/abs/2507.06185) — *Hidden Prompts in Manuscripts Exploit AI-Assisted Peer Review*
+- [arXiv:2508.20863](https://arxiv.org/abs/2508.20863) — *Misleading LLMs in Peer-Reviewing via Hidden Prompt-Injection*
+- [arXiv:2509.09912](https://arxiv.org/abs/2509.09912) — *When Your Reviewer is an LLM: Prompt Injection Risks in Peer Review*
+- [arXiv:2605.28999](https://arxiv.org/abs/2605.28999) — *Real-World Prompt-Injection Attacks in LLM-based Resume Screening*
 
 ## Testing
 
@@ -176,6 +176,8 @@ else:
 make test        # 102 tests
 make lint        # ruff
 make typecheck   # mypy
+make build       # build wheel/sdist
+make demo        # generate and scan a temporary malicious sample
 ```
 
 Malicious test fixtures are **generated in code** (never committed as binaries) — reproducible, auditable, diff-friendly.

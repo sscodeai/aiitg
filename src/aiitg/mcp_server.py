@@ -90,14 +90,21 @@ def policy_file(path: str) -> str:
 
 
 @app.command()
-def main(
+def serve(
     transport: str = typer.Option("stdio", "--transport", help="stdio | http"),
 ) -> None:
     """Run the aiitg MCP server."""
     if transport == "http":
         mcp.run(transport="streamable-http")
-    else:
+    elif transport == "stdio":
         mcp.run(transport="stdio")
+    else:
+        typer.echo("Error: --transport must be stdio|http", err=True)
+        raise typer.Exit(code=2)
+
+
+def main() -> None:
+    app()
 
 
 if __name__ == "__main__":

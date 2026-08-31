@@ -175,8 +175,8 @@ class ScanReport:
             "evidence": [ev.to_dict() for ev in self.evidence],
         }
 
-    def to_json(self, path: str | None = None) -> str:
-        text = json.dumps(self.to_dict(), ensure_ascii=False, indent=2)
+    def to_json(self, path: str | None = None, *, indent: int | None = 2) -> str:
+        text = json.dumps(self.to_dict(), ensure_ascii=False, indent=indent)
         if path:
             with open(path, "w", encoding="utf-8") as fh:
                 fh.write(text)

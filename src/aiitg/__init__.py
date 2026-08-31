@@ -56,6 +56,11 @@ def scan_file(path: str, *, min_severity: Severity | None = None) -> ScanReport:
     if fmt is None:
         from aiitg.core.errors import ScanError
 
-        return ScanReport.from_error(ScanError(kind="unsupported_format", message=f"unsupported format: {path}"))
-    doc = default_format_registry().parse(path)
+        return ScanReport.from_error(
+            ScanError(kind="unsupported_format", message=f"unsupported format: {path}"), file=path
+        )
+    try:
+        doc = default_format_registry().parse(path)
+    except Exception as exc:  # noqa: BLE001 - library entry point returns structured errors
+        return ScanReport.from_error(exc, file=path)
     return default_detector_registry().run(doc, min_severity=min_severity)

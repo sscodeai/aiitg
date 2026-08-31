@@ -42,6 +42,7 @@ dev = [
     "ruff",
     "mypy",
     "anyio>=4",
+    "build",
 ]
 
 [project.scripts]

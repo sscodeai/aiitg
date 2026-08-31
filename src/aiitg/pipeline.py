@@ -69,6 +69,25 @@ def process_file(path: str, *, mode: str = "strip", min_severity: Severity | Non
     if min_severity is not None:
         report = report.filter(min_severity=min_severity)
 
+    if report.status == "error":
+        label = TrustLabel(
+            value=TrustLabelValue.DANGEROUS,
+            score=0.0,
+            structure_score=0.0,
+            content_score=0.0,
+            meta_score=0.0,
+            reasons=[(report.error or {}).get("message", "scan failed")],
+        )
+        decision = default_policy().evaluate(report, label.value)
+        report.trust_label = label.to_dict()
+        report.decision = decision.to_dict()
+        return PipelineResult(
+            report=report,
+            sanitized=SanitizeResult(text="", removed=[], mode=mode),
+            label=label,
+            decision=decision,
+        )
+
     # parse again (report already has the doc internally? — re-parse for sanitize)
     fmt = default_format_registry().detect(path)
     if fmt is None:
@@ -84,7 +103,27 @@ def process_file(path: str, *, mode: str = "strip", min_severity: Severity | Non
                 reasons=["unsupported format"],
             ),
         )
-    doc = default_format_registry().parse(path)
+    try:
+        doc = default_format_registry().parse(path)
+    except Exception as exc:  # noqa: BLE001 - convert late parse failures into a gateway decision
+        report = ScanReport.from_error(exc, file=path)
+        label = TrustLabel(
+            value=TrustLabelValue.DANGEROUS,
+            score=0.0,
+            structure_score=0.0,
+            content_score=0.0,
+            meta_score=0.0,
+            reasons=[(report.error or {}).get("message", "scan failed")],
+        )
+        decision = default_policy().evaluate(report, label.value)
+        report.trust_label = label.to_dict()
+        report.decision = decision.to_dict()
+        return PipelineResult(
+            report=report,
+            sanitized=SanitizeResult(text="", removed=[], mode=mode),
+            label=label,
+            decision=decision,
+        )
 
     sanitizer = Sanitizer(mode=mode, min_severity=min_severity or Severity.LOW)
     sanitized = sanitizer.sanitize(doc, report.evidence)
