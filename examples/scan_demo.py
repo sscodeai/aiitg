@@ -3,8 +3,21 @@
 from __future__ import annotations
 
 import sys
+import tempfile
+from pathlib import Path
 
 from aiitg import Severity, scan_file
+
+
+def _build_demo_docx(path: Path) -> Path:
+    from docx import Document
+
+    doc = Document()
+    p = doc.add_paragraph("Visible text ")
+    p.add_run("SECRET\u200bINSTRUCTION")
+    p.add_run(" more text")
+    doc.save(str(path))
+    return path
 
 
 def main(path: str) -> None:
@@ -31,7 +44,11 @@ def main(path: str) -> None:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("usage: python examples/scan_demo.py <file>")
+    if len(sys.argv) > 2:
+        print("usage: python examples/scan_demo.py [file]")
         sys.exit(2)
-    main(sys.argv[1])
+    if len(sys.argv) == 2:
+        main(sys.argv[1])
+    else:
+        with tempfile.TemporaryDirectory() as tmp:
+            main(str(_build_demo_docx(Path(tmp) / "aiitg-demo.docx")))

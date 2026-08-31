@@ -140,7 +140,10 @@ def run_scan(path: str, registry: DetectorRegistry | None = None) -> ScanReport:
         return ScanReport.from_error(
             ScanError(kind="unsupported_format", message=f"unsupported format: {path}"), file=path
         )
-    doc = default_format_registry().parse(path)
+    try:
+        doc = default_format_registry().parse(path)
+    except ScanError as exc:
+        return ScanReport.from_error(exc, file=path)
     return registry.run(doc)
 
 
