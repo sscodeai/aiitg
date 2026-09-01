@@ -1,10 +1,12 @@
 # AI Input Trust Gateway (aiitg)
 
+[English](README.md) | [日本語](README.ja.md)
+
 **The zero-trust input security layer for AI agents.** Scan untrusted documents before they reach an LLM — detect hidden prompt-injection content, sanitize it, label its trustworthiness, and enforce policy. **External content is data, never authority.**
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)]()
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)]()
-[![Tests](https://img.shields.io/badge/tests-102%20passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-105%20passed-brightgreen.svg)]()
 [![arXiv](https://img.shields.io/badge/arXiv-2507.06185-red.svg)]()
 
 ---
@@ -173,7 +175,7 @@ else:
 ## Testing
 
 ```bash
-make test        # 102 tests
+make test        # 105 tests
 make lint        # ruff
 make typecheck   # mypy
 make build       # build wheel/sdist
