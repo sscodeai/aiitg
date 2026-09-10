@@ -2,13 +2,29 @@
 
 from __future__ import annotations
 
+import shutil
+from pathlib import Path
 from typing import Any
 
 import anyio
+import pytest
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 from tests.fixtures import builders
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _mcp_command() -> str:
+    """Prefer the project venv, fall back to the console script installed on PATH (CI)."""
+    local = REPO_ROOT / ".venv" / "bin" / "aiitg-mcp"
+    if local.exists():
+        return str(local)
+    found = shutil.which("aiitg-mcp")
+    if found:
+        return found
+    pytest.skip("aiitg-mcp console script not installed in this environment")
 
 
 def _first_text(content: list[Any]) -> str:
@@ -22,7 +38,7 @@ def _first_text(content: list[Any]) -> str:
 
 async def _call(path: str) -> dict:
     params = StdioServerParameters(
-        command=".venv/bin/aiitg-mcp",
+        command=_mcp_command(),
         args=[],
     )
     async with stdio_client(params) as (read, write):
@@ -51,7 +67,7 @@ class TestMCPServer:
         import json
 
         f = builders.build_docx_with_zerowidth(tmp_path / "evil.docx")
-        params = StdioServerParameters(command=".venv/bin/aiitg-mcp", args=[])
+        params = StdioServerParameters(command=_mcp_command(), args=[])
 
         async def run() -> str:
             async with stdio_client(params) as (read, write):
