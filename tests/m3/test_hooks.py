@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -390,13 +391,19 @@ class TestPostToolUse:
 class TestConsoleScript:
     """The real path a Claude Code hook takes: process + JSON on stdin."""
 
+    @staticmethod
+    def _script() -> str | None:
+        """Prefer the project venv, fall back to the installed console script (CI installs it on PATH)."""
+        local = REPO_ROOT / ".venv" / "bin" / "aiitg"
+        return str(local) if local.exists() else shutil.which("aiitg")
+
     def test_real_console_script_blocks_evil_docx(self, tmp_path):
-        script = REPO_ROOT / ".venv" / "bin" / "aiitg"
-        if not script.exists():
+        script = self._script()
+        if script is None:
             pytest.skip("console script not installed in this environment")
         evil = builders.build_docx_with_zerowidth(tmp_path / "evil.docx")
         result = subprocess.run(
-            [str(script), "hook", "pretooluse", "--cache-dir", str(tmp_path / "c")],
+            [script, "hook", "pretooluse", "--cache-dir", str(tmp_path / "c")],
             input=json.dumps(payload(evil)),
             capture_output=True,
             text=True,
@@ -408,11 +415,11 @@ class TestConsoleScript:
         assert "POL-001" in verdict["permissionDecisionReason"]
 
     def test_real_console_script_handles_malformed_stdin_with_exit_2(self, tmp_path):
-        script = REPO_ROOT / ".venv" / "bin" / "aiitg"
-        if not script.exists():
+        script = self._script()
+        if script is None:
             pytest.skip("console script not installed in this environment")
         result = subprocess.run(
-            [str(script), "hook", "pretooluse", "--cache-dir", str(tmp_path / "c")],
+            [script, "hook", "pretooluse", "--cache-dir", str(tmp_path / "c")],
             input="{not json",
             capture_output=True,
             text=True,
