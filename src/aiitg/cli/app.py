@@ -10,6 +10,8 @@ import typer
 from aiitg._version import __version__
 from aiitg.approval import ApprovalQueue
 from aiitg.audit import AuditLog
+from aiitg.cli.hook_cmd import hook_app
+from aiitg.cli.hook_cmd import hook_config as _hook_config
 from aiitg.core.detector import default_detector_registry, run_scan
 from aiitg.core.evidence import ScanReport, Severity
 from aiitg.pipeline import process_file
@@ -22,6 +24,8 @@ app = typer.Typer(
     help="AI Input Trust Gateway — hidden content auditor for documents fed to LLMs/Agents.",
     add_completion=False,
 )
+app.add_typer(hook_app, name="hook")
+app.command("hook-config")(_hook_config)
 
 
 def _resolve_min_severity(value: str) -> Severity:
