@@ -77,6 +77,7 @@ Untrusted input (docx/xlsx/xls/pdf/html/pptx)
 | **M0** | Hidden content audit — 6 formats × 7 detectors → coordinate-level JSON evidence | `aiitg scan` |
 | **M1** | Sanitization (strip/redact) + trust labeling (safe/caution/dangerous) | `aiitg sanitize`, `aiitg trust` |
 | **M2** | Policy enforcement (allow/quarantine/human_approval/block) + audit + human-approval queue + **MCP server** for agent frameworks | `aiitg policy`, `aiitg audit`, `aiitg approvals`, `aiitg-mcp` |
+| **M3** | Zero-touch adoption — a Claude Code `PreToolUse` hook that enforces policy before untrusted content enters the model context (fail-closed, cached, audited) | `aiitg hook pretooluse`, `aiitg hook-config` |
 
 ### Detectors
 
@@ -143,6 +144,38 @@ aiitg-mcp --transport http                  # streamable HTTP
 
 Agents call `policy_file` **before** feeding untrusted content into context; anything non-`allow` gets blocked/sanitized/human-approved.
 
+### Zero-touch adoption — Claude Code hook (M3)
+
+The hook enforces input trust for tools that never call the MCP server or the library: the agent keeps
+calling `Read`, and the document is scanned, labeled, and blocked/quarantined **before** it reaches the
+model context.
+
+```bash
+aiitg hook-config            # print the .claude/settings.json snippet (never writes it)
+```
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {"matcher": "Read", "hooks": [{"type": "command", "command": "aiitg hook pretooluse", "timeout": 30}]}
+    ]
+  }
+}
+```
+
+Behaviour: a clean document is read normally; a dangerous one is **denied** with the rule id, trust
+label, and the exact evidence location; a `quarantine` decision rewrites the read to a sanitized
+`.txt` substitute and tells the model, in `additionalContext`, that the bytes are sanitized text (the
+"assume compromise" cost, surfaced rather than hidden). `fail_closed=True` by default means documents
+aiitg **cannot parse** (`.doc`, `.rtf`, ...) are denied instead of trusted, and any hook crash becomes
+an explicit deny with exit 2 — a crash must never fail open, because a non-blocking exit lets the raw
+file through. Add `--audit audit.jsonl` to reuse the shipped append-only audit log, and
+`--queue queue.jsonl` to route `human_approval` decisions into `aiitg approvals`.
+
+Measured on a docx: a cache miss costs ~450 ms, a cache hit ~90 ms (same as the process-startup floor),
+because the `(path, mtime_ns, size)` decision cache short-circuits before the pipeline runs.
+
 ## Library
 
 ```python
@@ -189,7 +222,9 @@ Malicious test fixtures are **generated in code** (never committed as binaries) 
 - [x] **M0** — Hidden content audit (6 formats × 7 detectors → coordinate-level evidence)
 - [x] **M1** — Sanitization + trust labeling (scan → sanitize → label closed loop)
 - [x] **M2** — Policy enforcement + audit + human approval + MCP server (agent gateway)
+- [x] **M3** — Zero-touch adoption: Claude Code `PreToolUse`/`PostToolUse` hook adapter (`aiitg hook`)
 - [ ] More formats (legacy `.doc`, `.ppt`, images via OCR) · multi-policy engine · distributed audit · benchmark dataset for hidden-injection detection
+- [ ] M3.1 — HTTP proxy / reverse-proxy interception for API clients, per-tool `updatedToolOutput` adapters, Bash heuristics
 
 ## License
 
