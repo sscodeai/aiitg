@@ -4,9 +4,10 @@
 
 **AI エージェントのためのゼロトラスト入力セキュリティ層。** 信頼できない文書が LLM に渡される前にスキャンし、隠されたプロンプトインジェクションを検出し、サニタイズし、信頼ラベルを付け、ポリシーを適用します。**外部コンテンツはデータであり、権限ではありません。**
 
+[![CI](https://github.com/sscodeai/aiitg/actions/workflows/ci.yml/badge.svg)](https://github.com/sscodeai/aiitg/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)]()
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)]()
-[![Tests](https://img.shields.io/badge/tests-105%20passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-152%20passed-brightgreen.svg)](.github/workflows/ci.yml)
 [![arXiv](https://img.shields.io/badge/arXiv-2507.06185-red.svg)]()
 
 ---
@@ -175,7 +176,7 @@ else:
 ## テスト
 
 ```bash
-make test        # 105 tests
+make test        # 152 tests
 make lint        # ruff
 make typecheck   # mypy
 make build       # wheel/sdist をビルド

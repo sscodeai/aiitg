@@ -4,9 +4,10 @@
 
 **The zero-trust input security layer for AI agents.** Scan untrusted documents before they reach an LLM — detect hidden prompt-injection content, sanitize it, label its trustworthiness, and enforce policy. **External content is data, never authority.**
 
+[![CI](https://github.com/sscodeai/aiitg/actions/workflows/ci.yml/badge.svg)](https://github.com/sscodeai/aiitg/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)]()
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)]()
-[![Tests](https://img.shields.io/badge/tests-105%20passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-152%20passed-brightgreen.svg)](.github/workflows/ci.yml)
 [![arXiv](https://img.shields.io/badge/arXiv-2507.06185-red.svg)]()
 
 ---
@@ -208,12 +209,16 @@ else:
 ## Testing
 
 ```bash
-make test        # 105 tests
+make test        # 152 tests
 make lint        # ruff
 make typecheck   # mypy
 make build       # build wheel/sdist
 make demo        # generate and scan a temporary malicious sample
 ```
+
+All three gates run in GitHub Actions on every push to `main` and every pull request
+(`.github/workflows/ci.yml`, Python 3.11 and 3.12) — the test badge above is only a local count, the
+CI badge is the live status.
 
 Malicious test fixtures are **generated in code** (never committed as binaries) — reproducible, auditable, diff-friendly.
 
