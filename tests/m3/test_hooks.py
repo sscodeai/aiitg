@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from aiitg import __version__ as aiitg_version
 from aiitg.hooks import claude_code
 from aiitg.hooks.claude_code import (
     HookConfig,
@@ -310,6 +311,77 @@ class TestDecisionCache:
         handle_pretooluse(payload(f), config=cfg)
         assert calls["n"] == 2
 
+    def test_a_changed_namespace_is_a_miss(self, tmp_path, monkeypatch):
+        """A different build / mode / detector set must not reuse yesterday's verdict."""
+        f = builders.build_docx_with_zerowidth(tmp_path / "evil.docx")
+        calls = {"n": 0}
+        real = claude_code.process_file
+
+        def counting(*args, **kwargs):
+            calls["n"] += 1
+            return real(*args, **kwargs)
+
+        monkeypatch.setattr(claude_code, "process_file", counting)
+        cfg_strip = config(tmp_path)
+        handle_pretooluse(payload(f), config=cfg_strip)
+        assert calls["n"] == 1
+
+        # same file, same stat, different sanitizer mode -> namespace differs -> must re-decide
+        cfg_redact = config(tmp_path, mode="redact")
+        handle_pretooluse(payload(f), config=cfg_redact)
+        assert calls["n"] == 2, "a mode change must not be served from the cache"
+
+    def test_namespace_covers_build_detectors_and_policy(self, tmp_path):
+        cfg = config(tmp_path)
+        base = claude_code._cache_namespace(cfg)
+        assert aiitg_version in base
+        assert "|strip|" in base
+        assert base != claude_code._cache_namespace(config(tmp_path, mode="redact"))
+
+    def test_structurally_damaged_entry_is_a_miss_not_a_verdict(self, tmp_path, monkeypatch):
+        """A truncated/garbled entry must never become a deny for a clean file."""
+        f = builders.build_docx_benign(tmp_path / "ok.docx")
+        calls = {"n": 0}
+        real = claude_code.process_file
+
+        def counting(*args, **kwargs):
+            calls["n"] += 1
+            return real(*args, **kwargs)
+
+        monkeypatch.setattr(claude_code, "process_file", counting)
+        cfg = config(tmp_path)
+        first = handle_pretooluse(payload(f), config=cfg)
+        assert first.permission_decision == "allow"
+        assert calls["n"] == 1
+
+        for entry in (tmp_path / "cache").glob("*.json"):
+            data = json.loads(entry.read_text(encoding="utf-8"))
+            del data["report"]  # valid JSON, structurally incomplete
+            entry.write_text(json.dumps(data), encoding="utf-8")
+
+        second = handle_pretooluse(payload(f), config=cfg)
+        assert calls["n"] == 2, "a damaged entry must be treated as a miss"
+        assert second.permission_decision == "allow", "cache damage must not flip a verdict"
+
+    def test_entry_with_a_foreign_namespace_is_ignored(self, tmp_path, monkeypatch):
+        f = builders.build_docx_benign(tmp_path / "ok.docx")
+        calls = {"n": 0}
+        real = claude_code.process_file
+
+        def counting(*args, **kwargs):
+            calls["n"] += 1
+            return real(*args, **kwargs)
+
+        monkeypatch.setattr(claude_code, "process_file", counting)
+        cfg = config(tmp_path)
+        handle_pretooluse(payload(f), config=cfg)
+        for entry in (tmp_path / "cache").glob("*.json"):
+            data = json.loads(entry.read_text(encoding="utf-8"))
+            data["namespace"] = "some-other-build|strip|0:x|y"
+            entry.write_text(json.dumps(data), encoding="utf-8")
+        handle_pretooluse(payload(f), config=cfg)
+        assert calls["n"] == 2
+
     def test_corrupt_cache_entry_is_a_miss(self, tmp_path, monkeypatch):
         f = builders.build_docx_benign(tmp_path / "ok.docx")
         calls = {"n": 0}
@@ -486,6 +558,24 @@ class TestPostToolUse:
     def test_malformed_payload_stays_silent_when_fail_open(self, tmp_path):
         outcome = handle_posttooluse(None, config=config(tmp_path, fail_closed=False))
         assert render_outcome(outcome) == ("", 0)
+
+    def test_findings_are_written_to_the_audit_log(self, tmp_path):
+        audit = tmp_path / "audit.jsonl"
+        body = payload(None, event="PostToolUse", tool="WebFetch")
+        body["tool_response"] = "a\u200bb"
+        outcome = handle_posttooluse(body, config=config(tmp_path, audit_path=audit))
+        assert outcome.audit is not None
+        entry = json.loads(audit.read_text(encoding="utf-8").strip())
+        assert entry["decision"]["rule_id"] == "POL-TOOL-001"
+        assert entry["decision"]["action"] == "allow", "PostToolUse cannot block; the record must say so"
+        assert "invisible=1" in entry["note"]
+
+    def test_no_audit_flag_writes_nothing(self, tmp_path):
+        audit = tmp_path / "audit.jsonl"
+        body = payload(None, event="PostToolUse", tool="WebFetch")
+        body["tool_response"] = "a\u200bb"
+        handle_posttooluse(body, config=config(tmp_path))
+        assert not audit.exists()
 
     def test_scan_is_bounded_by_max_posttooluse_texts(self, tmp_path):
         body = payload(None, event="PostToolUse", tool="WebFetch")

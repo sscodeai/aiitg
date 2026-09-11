@@ -27,12 +27,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
+from aiitg._version import __version__
 from aiitg.approval import ApprovalQueue
 from aiitg.audit import AuditLog
+from aiitg.core.detector import default_detector_registry
 from aiitg.core.evidence import Evidence, Location, ScanReport, Severity
 from aiitg.hooks.cache import HookCache
 from aiitg.pipeline import process_file
-from aiitg.policy import Decision, DecisionAction
+from aiitg.policy import Decision, DecisionAction, default_policy
 from aiitg.sanitize import BIDI_RE, INVISIBLE_RE
 
 __all__ = [
@@ -58,6 +60,22 @@ UNPARSEABLE_DOC_EXTENSIONS = frozenset({".doc", ".rtf", ".odt", ".ppt", ".docm",
 DEFAULT_ENFORCED_EXTENSIONS = PARSEABLE_EXTENSIONS | UNPARSEABLE_DOC_EXTENSIONS
 
 _TOOL_NAME = "Read"
+
+#: Rule id recorded for PostToolUse findings. PostToolUse runs after the tool, so it cannot block:
+#: the finding is reported to the model and recorded, never enforced.
+POSTTOOLUSE_RULE_ID = "POL-TOOL-001"
+
+
+def _cache_namespace(cfg: HookConfig) -> str:
+    """Identity of everything that can change a cached verdict.
+
+    Build version + sanitizer mode + detector set + policy rule set. Without this, an aiitg upgrade
+    or a ``--mode`` change would keep serving yesterday's verdict for an unchanged file.
+    """
+    detectors = default_detector_registry().detectors
+    detector_digest = hashlib.sha256(",".join(sorted(det.id for det in detectors)).encode()).hexdigest()[:8]
+    policy_digest = hashlib.sha256(",".join(rule.id for rule in default_policy().rules).encode()).hexdigest()[:8]
+    return f"{__version__}|{cfg.mode}|{len(detectors)}:{detector_digest}|{policy_digest}"
 
 
 @dataclass(frozen=True)
@@ -312,7 +330,7 @@ def _handle_pretooluse(payload: dict[str, Any], cfg: HookConfig) -> HookOutcome:
         return _unparseable_outcome(cfg, path, suffix, payload)
 
     audit_meta = f"session={payload.get('session_id')} tool={payload.get('tool_name')}"
-    cache = HookCache(cfg.cache_dir) if cfg.cache_dir else None
+    cache = HookCache(cfg.cache_dir, namespace=_cache_namespace(cfg)) if cfg.cache_dir else None
 
     entry = cache.get(path) if cache else None
     if entry is None:
@@ -328,7 +346,10 @@ def _handle_pretooluse(payload: dict[str, Any], cfg: HookConfig) -> HookOutcome:
                     "reason": decision.reason if decision else None,
                     "policy_name": decision.policy_name if decision else None,
                     "label": label_value,
-                    "sanitized_text": sanitized_text,
+                    # Only a quarantine decision needs the text (to write the substitute). Storing it
+                    # for `allow` would copy clean document bodies into the cache directory.
+                    "sanitized_text": sanitized_text if decision is not None
+                    and decision.action == DecisionAction.QUARANTINE else "",
                     "evidence_note": _evidence_note(report),
                     "report": _report_to_cache(report),
                 },
@@ -499,4 +520,30 @@ def _handle_posttooluse(payload: dict[str, Any], cfg: HookConfig) -> HookOutcome
         f"aiitg: invisible characters in tool result ({invisible} invisible, {bidi} bidi)",
         additional_context=context,
         event="PostToolUse",
+        audit=_audit_posttooluse(cfg, payload, invisible, bidi),
+    )
+
+
+def _audit_posttooluse(
+    cfg: HookConfig, payload: dict[str, Any], invisible: int, bidi: int
+) -> dict[str, Any] | None:
+    """Record a PostToolUse finding in the shipped append-only audit log (when ``--audit`` is set).
+
+    The decision is recorded as ``POSTTOOLUSE_RULE_ID`` + ``allow`` on purpose: nothing was blocked,
+    because this event runs after the tool. The ``note`` carries the counts.
+    """
+    if cfg.audit_path is None:
+        return None
+    report = ScanReport(file=f"tool_result:{payload.get('tool_name')}", kind="tool_result", status="ok")
+    decision = Decision(
+        action=DecisionAction.ALLOW,
+        rule_id=POSTTOOLUSE_RULE_ID,
+        reason="invisible characters reported to the model (PostToolUse cannot block)",
+        policy_name="posttooluse",
+    )
+    return AuditLog(cfg.audit_path).record(
+        report=report,
+        decision=decision,
+        sanitized=False,
+        note=f"session={payload.get('session_id')} tool={payload.get('tool_name')} invisible={invisible} bidi={bidi}",
     )
