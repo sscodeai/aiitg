@@ -458,6 +458,43 @@ Deviations from the plan, and why:
    `status == "error"` report is cached like any other decision (the report carries the error, so a
    repeat read does not re-parse a corrupt file).
 
+Post-review fixes (review found one contract bug and one silent-failure gap):
+
+6. **`render_outcome` is event-aware.** It emitted `permissionDecision` /
+   `permissionDecisionReason` for *every* event, but the documented per-event table gives
+   `permissionDecision` to `PreToolUse` and `PreModelSwitch` only — `PostToolUse` uses top-level
+   `decision: "block"` + `reason`, and its only context field is `additionalContext`. The first
+   `PostToolUse` payload therefore either had its warning dropped or was rejected as
+   schema-invalid. The field sets now live in one place (`DOCUMENTED_FIELDS`) and `render_outcome`
+   renders per event; `tests/m3/test_hooks.py::TestEventContract` asserts the emitted field set is a
+   subset of the documented set for every outcome kind. The old tests only asserted the absence of
+   `updatedToolOutput`, which is why a green suite hid the bug.
+7. **PostToolUse can no longer emit a verdict at all.** A clean result prints nothing (exit 0), a
+   finding prints `additionalContext` only, and a malformed payload or internal fault uses the
+   documented "exit 2 + stderr" channel with no JSON on stdout.
+8. **`hook-config` embeds an absolute executable path** (resolved with `shutil.which`, `shlex.quote`d)
+   and warns on stderr when the executable is not on PATH: a hook command that cannot start is a
+   *non-blocking* error in Claude Code, so the document would reach the model **unscanned** while the
+   user believes it was checked. `aiitg hook doctor` checks the executable, the quarantine and cache
+   directories, the fail-closed default and the enforced-format count, and exits 1 on any failure.
+9. **The PostToolUse scan is bounded** (`HookConfig.max_posttooluse_texts`, default 64) so a large
+   tool result cannot force a full-text scan on every call.
+
+## Known gaps (M3.0, deliberate)
+
+- No prune/cleanup command for the quarantine and decision-cache directories (they are inert data and
+  safe to delete, but nothing expires them; the plan's §2.6 "orphan cleanup CLI" is not implemented).
+- Repeated reads of the same unchanged document append one audit line per read (correct for an audit
+  trail, but worth knowing before sizing the log).
+- The `decision is None` branch in the adapter is unreachable in practice: `run_scan` already returns
+  `status == "error"` for unsupported formats, which the pipeline turns into `POL-001` → `block`.
+- Still unverified end-to-end: `PostToolUse.updatedToolOutput` rewriting (needs per-tool output
+  shapes) and anything requiring a live Claude Code session (matcher/`if` resolution, timeouts, the
+  `ask` prompt rendering, `@`-referenced files).
+- Behaviour of a `PostToolUse` payload carrying an undocumented field is not observable here: the
+  docs say unsupported fields are not honoured, but whether Claude Code ignores them or reports a
+  schema error could only be confirmed against a running session — the fix removes the ambiguity.
+
 Measured latency, real console script (`.venv/bin/aiitg hook pretooluse`, 5 runs, docx):
 
 | path | median |

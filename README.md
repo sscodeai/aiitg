@@ -177,6 +177,13 @@ file through. Add `--audit audit.jsonl` to reuse the shipped append-only audit l
 Measured on a docx: a cache miss costs ~450 ms, a cache hit ~90 ms (same as the process-startup floor),
 because the `(path, mtime_ns, size)` decision cache short-circuits before the pipeline runs.
 
+**Verify the wiring before trusting it** — a hook command that cannot start is a *non-blocking* error
+in Claude Code, so documents would reach the model unscanned while everything looks configured:
+
+```bash
+aiitg hook doctor        # executable on PATH, directories writable, fail-closed default
+```
+
 ## Library
 
 ```python
