@@ -84,18 +84,28 @@ class TestHookPretoolUseCLI:
 
 
 class TestHookPostToolUseCLI:
-    def test_invisible_characters_are_reported(self, tmp_path):
+    def test_invisible_characters_are_reported_as_context_only(self, tmp_path):
         body = payload(None, event="PostToolUse", tool="WebFetch")
         body["tool_response"] = "looks normal\u200bhere"
         result = runner.invoke(app, ["hook", "posttooluse"], input=json.dumps(body))
         assert result.exit_code == 0, result.output
-        verdict = json.loads(result.stdout)["hookSpecificOutput"]
-        assert verdict["hookEventName"] == "PostToolUse"
-        assert "invisible" in verdict["additionalContext"]
+        hso = json.loads(result.stdout)["hookSpecificOutput"]
+        assert hso["hookEventName"] == "PostToolUse"
+        assert set(hso) == {"hookEventName", "additionalContext"}
+        assert "invisible" in hso["additionalContext"]
 
-    def test_malformed_stdin_exits_2(self, tmp_path):
+    def test_clean_tool_result_prints_nothing(self, tmp_path):
+        body = payload(None, event="PostToolUse", tool="WebFetch")
+        body["tool_response"] = "clean"
+        result = runner.invoke(app, ["hook", "posttooluse"], input=json.dumps(body))
+        assert result.exit_code == 0
+        assert result.stdout.strip() == ""
+
+    def test_malformed_stdin_exits_2_without_a_permission_verdict(self, tmp_path):
         result = runner.invoke(app, ["hook", "posttooluse"], input="not json at all")
         assert result.exit_code == 2
+        assert result.stdout.strip() == "", "PostToolUse must not print a permission verdict"
+        assert "malformed" in result.output
 
 
 class TestHookConfigCommand:
@@ -108,8 +118,119 @@ class TestHookConfigCommand:
         assert "--audit /tmp/aiitg-audit.jsonl" in snippet["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
         assert list(tmp_path.iterdir()) == [], "hook-config must never write a file"
 
+    def test_embeds_an_absolute_executable_path_when_asked(self, tmp_path):
+        fake = tmp_path / "bin" / "aiitg"
+        fake.parent.mkdir()
+        fake.write_text("#!/bin/sh\n", encoding="utf-8")
+        result = runner.invoke(app, ["hook-config", "--exe", str(fake)])
+        assert result.exit_code == 0, result.output
+        command = json.loads(result.stdout)["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+        assert command.startswith(str(fake)), command
+        assert command.endswith("hook pretooluse")
+
+    def test_quotes_a_path_containing_spaces(self, tmp_path):
+        fake = tmp_path / "my tools" / "aiitg"
+        fake.parent.mkdir()
+        fake.write_text("#!/bin/sh\n", encoding="utf-8")
+        result = runner.invoke(app, ["hook-config", "--exe", str(fake)])
+        command = json.loads(result.stdout)["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+        assert "'" in command and command.split("'")[1].endswith("aiitg"), command
+
+    def test_warns_when_the_executable_is_not_on_path(self, monkeypatch):
+        monkeypatch.setattr("aiitg.cli.hook_cmd._resolve_exe", lambda: None)
+        result = runner.invoke(app, ["hook-config"])
+        assert result.exit_code == 0, result.output
+        assert "not on PATH" in result.output
+        assert "UNSCANNED" in result.output
+
     def test_existing_help_lists_the_new_commands(self):
         result = runner.invoke(app, ["--help"])
         assert result.exit_code == 0
         assert "hook" in result.stdout
         assert "hook-config" in result.stdout
+
+
+class TestHookDoctor:
+    def test_passes_with_writable_directories(self, tmp_path):
+        result = runner.invoke(
+            app,
+            [
+                "hook",
+                "doctor",
+                "--exe",
+                str(tmp_path / "aiitg"),
+                "--quarantine-dir",
+                str(tmp_path / "q"),
+                "--cache-dir",
+                str(tmp_path / "c"),
+            ],
+        )
+        assert result.exit_code in (0, 1)  # --exe points at a non-existent file -> explicit FAIL
+        assert "FAIL" in result.output  # proves a missing executable is caught, not assumed fine
+
+    def test_reports_success_when_everything_exists(self, tmp_path):
+        exe = tmp_path / "aiitg"
+        exe.write_text("#!/bin/sh\n", encoding="utf-8")
+        result = runner.invoke(
+            app,
+            [
+                "hook",
+                "doctor",
+                "--exe",
+                str(exe),
+                "--quarantine-dir",
+                str(tmp_path / "q"),
+                "--cache-dir",
+                str(tmp_path / "c"),
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert "FAIL" not in result.output
+        assert result.output.count("PASS") == 5
+        assert "hook pretooluse" in result.output
+
+    def test_fails_when_a_directory_is_not_writable(self, tmp_path):
+        exe = tmp_path / "aiitg"
+        exe.write_text("#!/bin/sh\n", encoding="utf-8")
+        blocked = tmp_path / "readonly"
+        blocked.mkdir()
+        blocked.chmod(0o500)
+        try:
+            result = runner.invoke(
+                app,
+                [
+                    "hook",
+                    "doctor",
+                    "--exe",
+                    str(exe),
+                    "--quarantine-dir",
+                    str(blocked / "q"),
+                    "--cache-dir",
+                    str(tmp_path / "c"),
+                ],
+            )
+            assert result.exit_code == 1
+            assert "FAIL" in result.output
+        finally:
+            blocked.chmod(0o700)
+
+    def test_json_output_is_machine_readable(self, tmp_path):
+        exe = tmp_path / "aiitg"
+        exe.write_text("#!/bin/sh\n", encoding="utf-8")
+        result = runner.invoke(
+            app,
+            [
+                "hook",
+                "doctor",
+                "--json",
+                "--exe",
+                str(exe),
+                "--quarantine-dir",
+                str(tmp_path / "q"),
+                "--cache-dir",
+                str(tmp_path / "c"),
+            ],
+        )
+        payload_json = json.loads(result.stdout)
+        assert payload_json["ok"] is True
+        assert any(c["check"] == "fail-closed default" for c in payload_json["checks"])
