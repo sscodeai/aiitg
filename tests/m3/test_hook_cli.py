@@ -101,6 +101,23 @@ class TestHookPostToolUseCLI:
         assert result.exit_code == 0
         assert result.stdout.strip() == ""
 
+    def test_flags_the_event_cannot_honour_are_rejected(self, tmp_path):
+        """These options could never be applied on PostToolUse, so they must not be accepted."""
+        body = payload(None, event="PostToolUse", tool="WebFetch")
+        body["tool_response"] = "clean"
+        for flag in ("--mode", "--cache-dir", "--quarantine-dir", "--max-file-bytes", "--queue"):
+            result = runner.invoke(app, ["hook", "posttooluse", flag, "x"], input=json.dumps(body))
+            assert result.exit_code != 0, f"{flag} was accepted but cannot do anything"
+
+    def test_audit_flag_records_findings(self, tmp_path):
+        audit = tmp_path / "audit.jsonl"
+        body = payload(None, event="PostToolUse", tool="WebFetch")
+        body["tool_response"] = "x\u200by"
+        result = runner.invoke(app, ["hook", "posttooluse", "--audit", str(audit)], input=json.dumps(body))
+        assert result.exit_code == 0, result.output
+        entry = json.loads(audit.read_text(encoding="utf-8").strip())
+        assert entry["decision"]["rule_id"] == "POL-TOOL-001"
+
     def test_malformed_stdin_exits_2_without_a_permission_verdict(self, tmp_path):
         result = runner.invoke(app, ["hook", "posttooluse"], input="not json at all")
         assert result.exit_code == 2
@@ -150,27 +167,47 @@ class TestHookConfigCommand:
         assert "hook-config" in result.stdout
 
 
+def _settings_with_hook(tmp_path, exe_path: str) -> Path:
+    settings = tmp_path / "settings.json"
+    settings.write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    "PreToolUse": [
+                        {"matcher": "Read", "hooks": [{"type": "command", "command": f"{exe_path} hook pretooluse"}]}
+                    ]
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    return settings
+
+
 class TestHookDoctor:
-    def test_passes_with_writable_directories(self, tmp_path):
+    def test_missing_executable_fails(self, tmp_path):
         result = runner.invoke(
             app,
             [
                 "hook",
                 "doctor",
                 "--exe",
-                str(tmp_path / "aiitg"),
+                str(tmp_path / "does-not-exist"),
+                "--settings",
+                str(_settings_with_hook(tmp_path, str(tmp_path / "does-not-exist"))),
                 "--quarantine-dir",
                 str(tmp_path / "q"),
                 "--cache-dir",
                 str(tmp_path / "c"),
             ],
         )
-        assert result.exit_code in (0, 1)  # --exe points at a non-existent file -> explicit FAIL
-        assert "FAIL" in result.output  # proves a missing executable is caught, not assumed fine
+        assert result.exit_code == 1
+        assert "FAIL  executable" in result.output
 
-    def test_reports_success_when_everything_exists(self, tmp_path):
+    def test_reports_success_when_everything_is_wired(self, tmp_path):
         exe = tmp_path / "aiitg"
         exe.write_text("#!/bin/sh\n", encoding="utf-8")
+        settings = _settings_with_hook(tmp_path, str(exe))
         result = runner.invoke(
             app,
             [
@@ -178,6 +215,8 @@ class TestHookDoctor:
                 "doctor",
                 "--exe",
                 str(exe),
+                "--settings",
+                str(settings),
                 "--quarantine-dir",
                 str(tmp_path / "q"),
                 "--cache-dir",
@@ -186,12 +225,74 @@ class TestHookDoctor:
         )
         assert result.exit_code == 0, result.output
         assert "FAIL" not in result.output
-        assert result.output.count("PASS") == 5
+        assert "PASS  PreToolUse hook wired" in result.output
         assert "hook pretooluse" in result.output
+
+    def test_unwired_settings_fail(self, tmp_path):
+        """The check that matters: configuring nothing must not look like success."""
+        exe = tmp_path / "aiitg"
+        exe.write_text("#!/bin/sh\n", encoding="utf-8")
+        settings = tmp_path / "settings.json"
+        settings.write_text(json.dumps({"hooks": {}}), encoding="utf-8")
+        result = runner.invoke(
+            app,
+            [
+                "hook",
+                "doctor",
+                "--exe",
+                str(exe),
+                "--settings",
+                str(settings),
+                "--quarantine-dir",
+                str(tmp_path / "q"),
+                "--cache-dir",
+                str(tmp_path / "c"),
+            ],
+        )
+        assert result.exit_code == 1
+        assert "FAIL  PreToolUse hook wired" in result.output
+
+    def test_wired_but_unstartable_command_fails(self, tmp_path):
+        settings = _settings_with_hook(tmp_path, str(tmp_path / "gone" / "aiitg"))
+        result = runner.invoke(
+            app,
+            [
+                "hook",
+                "doctor",
+                "--settings",
+                str(settings),
+                "--quarantine-dir",
+                str(tmp_path / "q"),
+                "--cache-dir",
+                str(tmp_path / "c"),
+            ],
+        )
+        assert result.exit_code == 1
+        assert "cannot be started" in result.output
+
+    def test_unreadable_settings_fail(self, tmp_path):
+        settings = tmp_path / "settings.json"
+        settings.write_text("{ not json", encoding="utf-8")
+        result = runner.invoke(
+            app,
+            [
+                "hook",
+                "doctor",
+                "--settings",
+                str(settings),
+                "--quarantine-dir",
+                str(tmp_path / "q"),
+                "--cache-dir",
+                str(tmp_path / "c"),
+            ],
+        )
+        assert result.exit_code == 1
+        assert "FAIL  PreToolUse hook wired" in result.output
 
     def test_fails_when_a_directory_is_not_writable(self, tmp_path):
         exe = tmp_path / "aiitg"
         exe.write_text("#!/bin/sh\n", encoding="utf-8")
+        settings = _settings_with_hook(tmp_path, str(exe))
         blocked = tmp_path / "readonly"
         blocked.mkdir()
         blocked.chmod(0o500)
@@ -203,6 +304,8 @@ class TestHookDoctor:
                     "doctor",
                     "--exe",
                     str(exe),
+                    "--settings",
+                    str(settings),
                     "--quarantine-dir",
                     str(blocked / "q"),
                     "--cache-dir",
@@ -210,7 +313,7 @@ class TestHookDoctor:
                 ],
             )
             assert result.exit_code == 1
-            assert "FAIL" in result.output
+            assert "FAIL  quarantine dir writable" in result.output
         finally:
             blocked.chmod(0o700)
 
@@ -225,6 +328,8 @@ class TestHookDoctor:
                 "--json",
                 "--exe",
                 str(exe),
+                "--settings",
+                str(_settings_with_hook(tmp_path, str(exe))),
                 "--quarantine-dir",
                 str(tmp_path / "q"),
                 "--cache-dir",
@@ -233,4 +338,5 @@ class TestHookDoctor:
         )
         payload_json = json.loads(result.stdout)
         assert payload_json["ok"] is True
-        assert any(c["check"] == "fail-closed default" for c in payload_json["checks"])
+        names = {c["check"] for c in payload_json["checks"]}
+        assert {"executable", "PreToolUse hook wired", "fail-closed default"} <= names

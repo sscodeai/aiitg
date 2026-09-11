@@ -132,30 +132,88 @@ def pretooluse(
 
 @hook_app.command("posttooluse")
 def posttooluse(
-    audit: Path | None = typer.Option(None, "--audit", help="Append audit lines to this JSONL path."),
-    queue: Path | None = typer.Option(None, "--queue", help="Append human-approval requests to this JSONL path."),
+    audit: Path | None = typer.Option(None, "--audit", help="Append findings to this JSONL audit path."),
     fail_open: bool = typer.Option(False, "--fail-open", help="Stay silent instead of warning on stderr."),
-    mode: str = typer.Option("strip", "--mode", help=f"Sanitizer mode: {' | '.join(_MODES)}."),
-    cache_dir: Path | None = typer.Option(None, "--cache-dir", help="Decision cache directory."),
-    no_cache: bool = typer.Option(False, "--no-cache", help="Disable the decision cache."),
-    quarantine_dir: Path | None = typer.Option(
-        None, "--quarantine-dir", help="Where sanitized substitutes are written."
-    ),
-    max_file_bytes: int = typer.Option(50 * 1024 * 1024, "--max-file-bytes", help="Deny files larger than this."),
 ) -> None:
-    """Flag invisible/bidi characters in a Claude Code PostToolUse payload."""
+    """Flag invisible/bidi characters in a Claude Code PostToolUse payload.
+
+    Only ``--audit`` and ``--fail-open`` apply: this event runs *after* the tool, so it can neither
+    allow nor deny, never scans a file path and never writes a quarantine substitute.
+    """
+    defaults = HookConfig()
     _run(
         handle_posttooluse,
-        _build_config(
-            audit=audit,
-            queue=queue,
-            fail_open=fail_open,
-            mode=mode,
-            cache_dir=cache_dir,
-            no_cache=no_cache,
-            quarantine_dir=quarantine_dir,
-            max_file_bytes=max_file_bytes,
+        HookConfig(
+            quarantine_dir=defaults.quarantine_dir,
+            cache_dir=None,
+            audit_path=audit,
+            queue_path=None,
+            mode=defaults.mode,
+            fail_closed=not fail_open,
+            max_file_bytes=defaults.max_file_bytes,
         ),
+    )
+
+
+def _settings_candidates(explicit: Path | None) -> list[Path]:
+    if explicit is not None:
+        return [explicit]
+    home = Path.home() / ".claude"
+    return [
+        Path.cwd() / ".claude" / "settings.json",
+        Path.cwd() / ".claude" / "settings.local.json",
+        home / "settings.json",
+        home / "settings.local.json",
+    ]
+
+
+def _all_commands(node: object) -> list[str]:
+    """Collect every ``"command"`` string in a settings object (any depth)."""
+    found: list[str] = []
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key == "command" and isinstance(value, str):
+                found.append(value)
+            else:
+                found.extend(_all_commands(value))
+    elif isinstance(node, list):
+        for item in node:
+            found.extend(_all_commands(item))
+    return found
+
+
+def _check_wiring(settings: Path | None) -> tuple[bool, str]:
+    """Is a PreToolUse hook pointing at *this* aiitg actually installed, and would it start?"""
+    for candidate in _settings_candidates(settings):
+        if not candidate.is_file():
+            continue
+        try:
+            data = json.loads(candidate.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            return False, f"{candidate}: unreadable ({exc})"
+        commands = [cmd for cmd in _all_commands(data) if "hook pretooluse" in cmd]
+        if not commands:
+            continue
+        command = commands[0]
+        try:
+            tokens = shlex.split(command)
+        except ValueError as exc:
+            return False, f"{candidate}: cannot parse command ({exc})"
+        if not tokens:
+            continue
+        executable = tokens[0]
+        resolvable = Path(executable).is_file() or shutil.which(executable) is not None
+        if not resolvable:
+            return False, (
+                f"{candidate}: wired as '{command}' but '{executable}' cannot be started — "
+                "Claude Code treats that as a non-blocking error and the document passes unscanned"
+            )
+        return True, f"{candidate}: '{command}'"
+    if settings is not None:
+        return False, f"{settings}: no PreToolUse hook calling 'aiitg hook pretooluse'"
+    return False, (
+        "no .claude/settings.json (project or user) wires a PreToolUse hook — run `aiitg hook-config` "
+        "and paste the snippet in, or the gateway is not on the path"
     )
 
 
@@ -175,6 +233,9 @@ def doctor(
     quarantine_dir: Path | None = typer.Option(None, "--quarantine-dir", help="Quarantine directory to check."),
     cache_dir: Path | None = typer.Option(None, "--cache-dir", help="Cache directory to check."),
     exe: Path | None = typer.Option(None, "--exe", help="Explicit aiitg executable path (skips the PATH check)."),
+    settings: Path | None = typer.Option(
+        None, "--settings", help="Settings file to inspect instead of the standard .claude locations."
+    ),
     as_json: bool = typer.Option(False, "--json", help="Emit machine-readable JSON."),
 ) -> None:
     """Self-check the hook setup: a hook that cannot run fails silently, so verify before trusting it."""
@@ -189,6 +250,9 @@ def doctor(
     else:
         found = _resolve_exe()
         checks.append({"check": "console script on PATH", "ok": found is not None, "detail": found or _NOT_ON_PATH})
+
+    wired, wiring_detail = _check_wiring(settings)
+    checks.append({"check": "PreToolUse hook wired", "ok": wired, "detail": wiring_detail})
 
     for label, directory in (("quarantine dir writable", target_q), ("cache dir writable", target_c)):
         ok, detail = _writable(directory)
