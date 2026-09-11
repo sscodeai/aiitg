@@ -340,21 +340,106 @@ class TestRenderOutcome:
         assert "additionalContext" not in hso
         assert code == 0
 
-    def test_updated_input_and_context_are_emitted_when_present(self):
+    def test_updated_input_and_context_are_emitted_for_pretooluse(self):
         outcome = HookOutcome(
             "allow",
             "ok",
             updated_input={"file_path": "/tmp/x.txt"},
             additional_context="sanitized",
             exit_code=2,
-            event="PostToolUse",
         )
         text, code = render_outcome(outcome)
         hso = json.loads(text)["hookSpecificOutput"]
+        assert hso["hookEventName"] == "PreToolUse"
         assert hso["updatedInput"] == {"file_path": "/tmp/x.txt"}
         assert hso["additionalContext"] == "sanitized"
-        assert hso["hookEventName"] == "PostToolUse"
         assert code == 2
+
+    def test_posttooluse_drops_fields_the_event_does_not_honour(self):
+        """`updatedInput` is a PreToolUse field; carrying it on PostToolUse would be a contract break."""
+        outcome = HookOutcome(
+            "allow",
+            "ok",
+            updated_input={"file_path": "/tmp/x.txt"},
+            additional_context="sanitized",
+            event="PostToolUse",
+        )
+        hso = json.loads(render_outcome(outcome)[0])["hookSpecificOutput"]
+        assert set(hso) == {"hookEventName", "additionalContext"}
+
+    def test_emit_json_false_produces_no_stdout(self):
+        text, code = render_outcome(HookOutcome("allow", "reason", exit_code=2, event="PostToolUse", emit_json=False))
+        assert text == ""
+        assert code == 2
+
+
+class TestEventContract:
+    """The emitted field set must match the documented per-event contract.
+
+    This is the test class that P1 needed: `PostToolUse` does not honour `permissionDecision`
+    (the tool has already run), so emitting it either drops the warning or fails schema validation.
+    """
+
+    @staticmethod
+    def _hso(outcome):
+        text, _ = render_outcome(outcome)
+        if not text:
+            return None
+        body = json.loads(text)
+        assert set(body) <= {"hookSpecificOutput"}, f"unexpected top-level keys: {set(body)}"
+        return body["hookSpecificOutput"]
+
+    def _assert_contract(self, outcome, event: str):
+        hso = self._hso(outcome)
+        if hso is None:
+            return None
+        assert hso["hookEventName"] == event
+        allowed = claude_code.DOCUMENTED_FIELDS[event]
+        extra = set(hso) - allowed
+        assert not extra, f"{event} emitted fields the event does not honour: {sorted(extra)}"
+        return hso
+
+    def test_pretooluse_outcomes_use_pretooluse_fields_only(self, tmp_path):
+        cfg = config(tmp_path)
+        evil = builders.build_docx_with_zerowidth(tmp_path / "evil.docx")
+        ok = builders.build_docx_benign(tmp_path / "ok.docx")
+        tiny = builders.build_docx_with_tiny_font(tmp_path / "tiny.docx")
+        legacy = tmp_path / "legacy.doc"
+        legacy.write_bytes(b"\xd0\xcf\x11\xe0 fake")
+
+        cases = [
+            handle_pretooluse(payload(ok), config=cfg),
+            handle_pretooluse(payload(evil), config=cfg),
+            handle_pretooluse(payload(tiny), config=cfg),
+            handle_pretooluse(payload(legacy), config=cfg),
+            handle_pretooluse(None, config=cfg),
+            handle_pretooluse(payload(tmp_path / "notes.md"), config=cfg),
+        ]
+        for outcome in cases:
+            hso = self._assert_contract(outcome, "PreToolUse")
+            assert hso is not None
+            assert hso["permissionDecision"] in {"allow", "deny", "ask", "defer"}
+
+    def test_posttooluse_never_emits_permission_decision(self, tmp_path):
+        cfg = config(tmp_path)
+        with_findings = payload(None, event="PostToolUse", tool="WebFetch")
+        with_findings["tool_response"] = "text\u200bhere"
+        clean = payload(None, event="PostToolUse", tool="WebFetch")
+        clean["tool_response"] = "text here"
+
+        for outcome in (handle_posttooluse(with_findings, config=cfg), handle_posttooluse(clean, config=cfg)):
+            hso = self._assert_contract(outcome, "PostToolUse")
+            if hso is not None:
+                assert "permissionDecision" not in hso
+                assert "permissionDecisionReason" not in hso
+                assert "updatedToolOutput" not in hso
+
+    def test_posttooluse_clean_result_emits_nothing(self, tmp_path):
+        body = payload(None, event="PostToolUse", tool="WebFetch")
+        body["tool_response"] = "nothing hidden"
+        text, code = render_outcome(handle_posttooluse(body, config=config(tmp_path)))
+        assert text == ""
+        assert code == 0
 
 
 class TestPostToolUse:
@@ -365,11 +450,18 @@ class TestPostToolUse:
         assert outcome.permission_decision == "allow"
         assert outcome.additional_context
         assert "invisible" in outcome.additional_context
-        text, _ = render_outcome(outcome)
+        text, code = render_outcome(outcome)
         hso = json.loads(text)["hookSpecificOutput"]
         assert hso["hookEventName"] == "PostToolUse"
-        # documented as unverified per-tool output shape -> never rewritten in M3.0
-        assert "updatedToolOutput" not in hso
+        assert set(hso) == {"hookEventName", "additionalContext"}
+        assert code == 0
+
+    def test_bidi_characters_are_flagged(self, tmp_path):
+        body = payload(None, event="PostToolUse", tool="WebFetch")
+        body["tool_response"] = "visible\u202eevil"
+        outcome = handle_posttooluse(body, config=config(tmp_path))
+        assert outcome.additional_context
+        assert "bidi" in outcome.additional_context
 
     def test_clean_tool_result_is_transparent(self, tmp_path):
         body = payload(None, event="PostToolUse", tool="WebFetch")
@@ -377,15 +469,32 @@ class TestPostToolUse:
         outcome = handle_posttooluse(body, config=config(tmp_path))
         assert outcome.permission_decision == "allow"
         assert outcome.additional_context is None
+        assert render_outcome(outcome) == ("", 0)
 
-    def test_wrong_event_is_ignored(self, tmp_path):
+    def test_wrong_event_emits_nothing(self, tmp_path):
         outcome = handle_posttooluse(payload(None), config=config(tmp_path))
         assert outcome.permission_decision == "allow"
+        assert render_outcome(outcome) == ("", 0)
 
-    def test_malformed_payload_denies(self, tmp_path):
+    def test_malformed_payload_uses_exit_2_and_no_json(self, tmp_path):
         outcome = handle_posttooluse(None, config=config(tmp_path))
-        assert outcome.permission_decision == "deny"
-        assert outcome.exit_code == 2
+        text, code = render_outcome(outcome)
+        assert text == "", "PostToolUse must not emit a permission verdict"
+        assert code == 2
+        assert "malformed" in outcome.reason
+
+    def test_malformed_payload_stays_silent_when_fail_open(self, tmp_path):
+        outcome = handle_posttooluse(None, config=config(tmp_path, fail_closed=False))
+        assert render_outcome(outcome) == ("", 0)
+
+    def test_scan_is_bounded_by_max_posttooluse_texts(self, tmp_path):
+        body = payload(None, event="PostToolUse", tool="WebFetch")
+        body["tool_response"] = [f"chunk {i}" for i in range(200)]
+        body["tool_response"][150] = "hidden\u200binstruction"
+        limited = handle_posttooluse(body, config=config(tmp_path, max_posttooluse_texts=10))
+        full = handle_posttooluse(body, config=config(tmp_path, max_posttooluse_texts=200))
+        assert limited.additional_context is None, "scan must stop at the configured bound"
+        assert full.additional_context is not None
 
 
 class TestConsoleScript:
