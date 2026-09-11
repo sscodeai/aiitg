@@ -7,7 +7,7 @@
 [![CI](https://github.com/sscodeai/aiitg/actions/workflows/ci.yml/badge.svg)](https://github.com/sscodeai/aiitg/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)]()
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)]()
-[![Tests](https://img.shields.io/badge/tests-152%20passed-brightgreen.svg)](.github/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-183%20passed-brightgreen.svg)](.github/workflows/ci.yml)
 [![arXiv](https://img.shields.io/badge/arXiv-2507.06185-red.svg)]()
 
 ---
@@ -98,6 +98,27 @@ Untrusted input (docx/xlsx/xls/pdf/html/pptx)
 
 ## Install
 
+### Use it (recommended for the Claude Code hook)
+
+The hook runs as a separate process on every enforced tool call, so `aiitg` must be on `PATH` — a
+hook command that cannot start is a *non-blocking* error in Claude Code, and the document would pass
+through **unscanned**. Install it as a tool, not into a project venv:
+
+```bash
+uv tool install git+https://github.com/sscodeai/aiitg
+# or
+pipx install git+https://github.com/sscodeai/aiitg
+```
+
+Then wire it up and verify:
+
+```bash
+aiitg hook-config     # paste the snippet into .claude/settings.json
+aiitg hook doctor     # confirm it is wired AND startable
+```
+
+### Work on it (development)
+
 ```bash
 uv venv .venv && uv pip install -e ".[dev]"
 # or
@@ -181,8 +202,14 @@ because the `(path, mtime_ns, size)` decision cache short-circuits before the pi
 in Claude Code, so documents would reach the model unscanned while everything looks configured:
 
 ```bash
-aiitg hook doctor        # executable on PATH, directories writable, fail-closed default
+aiitg hook doctor        # executable on PATH, hook actually wired, directories writable
 ```
+
+The decision cache and the audit log are **local state, not a trust boundary** — an attacker with
+write access to your home directory can forge a cached verdict, exactly as they could edit your
+settings. The cache is keyed on `(path, mtime_ns, size)` plus a namespace covering the build,
+sanitizer mode, detector set and policy rules, so an upgrade or a `--mode` change can never reuse an
+older verdict; a damaged entry is treated as a miss, never as a decision.
 
 ## Library
 
@@ -216,7 +243,7 @@ else:
 ## Testing
 
 ```bash
-make test        # 152 tests
+make test        # 183 tests
 make lint        # ruff
 make typecheck   # mypy
 make build       # build wheel/sdist
@@ -237,6 +264,10 @@ Malicious test fixtures are **generated in code** (never committed as binaries) 
 - [x] **M3** — Zero-touch adoption: Claude Code `PreToolUse`/`PostToolUse` hook adapter (`aiitg hook`)
 - [ ] More formats (legacy `.doc`, `.ppt`, images via OCR) · multi-policy engine · distributed audit · benchmark dataset for hidden-injection detection
 - [ ] M3.1 — HTTP proxy / reverse-proxy interception for API clients, per-tool `updatedToolOutput` adapters, Bash heuristics
+
+Design notes, measured findings and known gaps for M3 live in
+[`docs/plan-zero-touch-adoption.md`](docs/plan-zero-touch-adoption.md). Contribution rules and the
+threat model are in [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`SECURITY.md`](SECURITY.md).
 
 ## License
 
