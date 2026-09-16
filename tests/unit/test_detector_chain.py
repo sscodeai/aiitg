@@ -132,6 +132,10 @@ class TestDetectorRegistry:
         # crash detector isolated; dummy still runs
         assert len(report.evidence) == 1
         assert report.evidence[0].detector_id == "DET-999"
+        assert report.status == "error"
+        assert report.error is not None
+        assert report.error["kind"] == "detector_failed"
+        assert report.to_dict()["scan"]["warnings"]
 
 
 def pytest_raises(exc):
