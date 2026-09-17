@@ -162,6 +162,12 @@ class TestPreToolUseDecisions:
         assert outcome.permission_decision == "allow"
         assert "not enforced" in outcome.reason
 
+    def test_misleading_extension_is_sniffed_and_blocked(self, tmp_path):
+        f = builders.build_docx_with_zerowidth(tmp_path / "evil.txt")
+        outcome = handle_pretooluse(payload(f), config=config(tmp_path))
+        assert outcome.permission_decision == "deny"
+        assert "POL-001" in outcome.reason
+
     def test_other_tool_and_event_are_ignored(self, tmp_path):
         f = builders.build_docx_with_zerowidth(tmp_path / "evil.docx")
         bash = handle_pretooluse(payload(f, tool="Bash"), config=config(tmp_path))
@@ -295,6 +301,29 @@ class TestDecisionCache:
         os.utime(f, ns=(stat.st_atime_ns, stat.st_mtime_ns + 10**9))
         handle_pretooluse(payload(f), config=cfg)
         assert calls["n"] == 2, "a modified file must not be served from the cache"
+
+    def test_same_stat_but_changed_bytes_is_a_miss(self, tmp_path, monkeypatch):
+        f = builders.build_docx_benign(tmp_path / "ok.docx")
+        calls = {"n": 0}
+        real = claude_code.process_file
+
+        def counting(*args, **kwargs):
+            calls["n"] += 1
+            return real(*args, **kwargs)
+
+        monkeypatch.setattr(claude_code, "process_file", counting)
+        cfg = config(tmp_path)
+        handle_pretooluse(payload(f), config=cfg)
+        stat = os.stat(f)
+
+        original = f.read_bytes()
+        replacement = original[:-1] + (b"0" if original[-1:] != b"0" else b"1")
+        assert len(replacement) == len(original)
+        f.write_bytes(replacement)
+        os.utime(f, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+
+        handle_pretooluse(payload(f), config=cfg)
+        assert calls["n"] == 2, "content changes must invalidate the cache even if stat metadata is preserved"
 
     def test_cache_can_be_disabled(self, tmp_path, monkeypatch):
         f = builders.build_docx_benign(tmp_path / "ok.docx")

@@ -32,6 +32,7 @@ from aiitg.approval import ApprovalQueue
 from aiitg.audit import AuditLog
 from aiitg.core.detector import default_detector_registry
 from aiitg.core.evidence import Evidence, Location, ScanReport, Severity
+from aiitg.core.registry import default_format_registry
 from aiitg.hooks.cache import HookCache
 from aiitg.pipeline import process_file
 from aiitg.policy import Decision, DecisionAction, default_policy
@@ -243,6 +244,7 @@ def _report_from_dict(data: dict[str, Any]) -> ScanReport:
         evidence=[_evidence_from_dict(ev) for ev in data.get("evidence", [])],
         trust_label=data.get("trust_label"),
         decision=data.get("decision"),
+        warnings=list(data.get("warnings") or []),
     )
 
 
@@ -260,6 +262,7 @@ def _report_to_cache(report: ScanReport) -> dict[str, Any]:
         "evidence": [ev.to_dict() for ev in report.evidence],
         "trust_label": report.trust_label,
         "decision": report.decision,
+        "warnings": report.warnings,
     }
 
 
@@ -315,7 +318,11 @@ def _handle_pretooluse(payload: dict[str, Any], cfg: HookConfig) -> HookOutcome:
     path = Path(raw_path)
     suffix = path.suffix.lower()
     if suffix not in cfg.enforce_extensions:
-        return HookOutcome("allow", f"aiitg: extension {suffix or '(none)'} not enforced")
+        if not path.is_file():
+            return HookOutcome("allow", f"aiitg: extension {suffix or '(none)'} not enforced")
+        detected = default_format_registry().detect(path)
+        if detected is None or detected.kind not in {"docx", "xlsx", "xls", "pdf", "html", "pptx"}:
+            return HookOutcome("allow", f"aiitg: extension {suffix or '(none)'} not enforced")
 
     if not path.is_file():
         return _deny_or_allow(cfg, f"aiitg: file missing or unreadable: {path}")

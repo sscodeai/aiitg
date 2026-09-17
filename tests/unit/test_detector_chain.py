@@ -50,6 +50,14 @@ class TestRegistry:
         f.write_bytes(b"Xsome magic content")
         assert reg.detect(str(f)).kind == "weird"  # type: ignore[union-attr]
 
+    def test_detect_ooxml_with_misleading_extension(self, tmp_path):
+        from tests.fixtures import builders
+
+        f = builders.build_docx_with_zerowidth(tmp_path / "payload.txt")
+        from aiitg.core.registry import default_format_registry
+
+        assert default_format_registry().detect(f).kind == "docx"  # type: ignore[union-attr]
+
     def test_parse_unsupported(self, tmp_path):
         reg = FormatRegistry()
         f = tmp_path / "x.xyz"

@@ -252,6 +252,43 @@ class TestHookDoctor:
         assert result.exit_code == 1
         assert "FAIL  PreToolUse hook wired" in result.output
 
+    def test_pretooluse_command_under_wrong_event_fails(self, tmp_path):
+        exe = tmp_path / "aiitg"
+        exe.write_text("#!/bin/sh\n", encoding="utf-8")
+        settings = tmp_path / "settings.json"
+        settings.write_text(
+            json.dumps(
+                {
+                    "hooks": {
+                        "PostToolUse": [
+                            {
+                                "matcher": "WebFetch",
+                                "hooks": [{"type": "command", "command": f"{exe} hook pretooluse"}],
+                            }
+                        ]
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        result = runner.invoke(
+            app,
+            [
+                "hook",
+                "doctor",
+                "--exe",
+                str(exe),
+                "--settings",
+                str(settings),
+                "--quarantine-dir",
+                str(tmp_path / "q"),
+                "--cache-dir",
+                str(tmp_path / "c"),
+            ],
+        )
+        assert result.exit_code == 1
+        assert "FAIL  PreToolUse hook wired" in result.output
+
     def test_wired_but_unstartable_command_fails(self, tmp_path):
         settings = _settings_with_hook(tmp_path, str(tmp_path / "gone" / "aiitg"))
         result = runner.invoke(

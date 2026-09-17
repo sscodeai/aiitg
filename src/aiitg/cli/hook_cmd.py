@@ -167,19 +167,30 @@ def _settings_candidates(explicit: Path | None) -> list[Path]:
     ]
 
 
-def _all_commands(node: object) -> list[str]:
-    """Collect every ``"command"`` string in a settings object (any depth)."""
-    found: list[str] = []
-    if isinstance(node, dict):
-        for key, value in node.items():
-            if key == "command" and isinstance(value, str):
-                found.append(value)
-            else:
-                found.extend(_all_commands(value))
-    elif isinstance(node, list):
-        for item in node:
-            found.extend(_all_commands(item))
-    return found
+def _pretooluse_read_commands(settings: object) -> list[str]:
+    """Collect commands from hooks.PreToolUse entries that match Read."""
+    if not isinstance(settings, dict):
+        return []
+    hooks = settings.get("hooks")
+    if not isinstance(hooks, dict):
+        return []
+    entries = hooks.get("PreToolUse")
+    if not isinstance(entries, list):
+        return []
+
+    commands: list[str] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("matcher") != "Read":
+            continue
+        hook_items = entry.get("hooks")
+        if not isinstance(hook_items, list):
+            continue
+        for hook in hook_items:
+            if isinstance(hook, dict) and isinstance(hook.get("command"), str):
+                commands.append(hook["command"])
+    return commands
 
 
 def _check_wiring(settings: Path | None) -> tuple[bool, str]:
@@ -191,7 +202,7 @@ def _check_wiring(settings: Path | None) -> tuple[bool, str]:
             data = json.loads(candidate.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
             return False, f"{candidate}: unreadable ({exc})"
-        commands = [cmd for cmd in _all_commands(data) if "hook pretooluse" in cmd]
+        commands = [cmd for cmd in _pretooluse_read_commands(data) if "hook pretooluse" in cmd]
         if not commands:
             continue
         command = commands[0]

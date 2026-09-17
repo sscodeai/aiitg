@@ -7,10 +7,11 @@ an unchanged document down to the interpreter floor (~46 ms).
 
 Two properties matter for a security tool:
 
-* **Identity, not just mtime.** Entries are keyed on ``(path, mtime_ns, size)`` *and* carry a
-  :attr:`HookCache.namespace` describing the build, sanitizer mode, detector set and policy that
-  produced the verdict. A different namespace is a miss, so upgrading aiitg (or changing
-  ``--mode``) can never reuse an old decision for an unchanged file.
+* **Identity, not just mtime.** Entries are keyed on ``(path, mtime_ns, size)`` and carry both a
+  content hash and a :attr:`HookCache.namespace` describing the build, sanitizer mode, detector set
+  and policy that produced the verdict. A different hash or namespace is a miss, so replacing bytes
+  while preserving stat metadata, upgrading aiitg, or changing ``--mode`` cannot reuse an old
+  decision.
 * **A damaged entry must be a miss, never a verdict.** Any missing key or wrong type makes
   :meth:`HookCache.get` return ``None``, so corruption cannot turn into a deny for a clean file.
 
@@ -37,6 +38,7 @@ class HookCache:
         "path",
         "mtime_ns",
         "size",
+        "sha256",
         "action",
         "label",
         "report",
@@ -54,6 +56,17 @@ class HookCache:
     def _entry_path(self, path: Path, mtime_ns: int, size: int) -> Path:
         return self.directory / f"{self._key(path, mtime_ns, size)}.json"
 
+    @staticmethod
+    def _content_hash(path: str | Path) -> str | None:
+        digest = hashlib.sha256()
+        try:
+            with open(path, "rb") as fh:
+                for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+                    digest.update(chunk)
+        except OSError:
+            return None
+        return digest.hexdigest()
+
     def _is_usable(self, data: Any) -> bool:
         if not isinstance(data, dict):
             return False
@@ -61,7 +74,7 @@ class HookCache:
             return False
         if any(key not in data for key in self.REQUIRED_KEYS):
             return False
-        return isinstance(data.get("report"), dict)
+        return isinstance(data.get("report"), dict) and isinstance(data.get("sha256"), str)
 
     def get(self, path: str | Path) -> dict[str, Any] | None:
         """Return the cached entry, or ``None`` on miss / corruption / identity change."""
@@ -80,6 +93,8 @@ class HookCache:
             return None
         if data["mtime_ns"] != stat.st_mtime_ns or data["size"] != stat.st_size:
             return None
+        if data["sha256"] != self._content_hash(path):
+            return None
         return data
 
     def put(self, path: str | Path, payload: dict[str, Any]) -> None:
@@ -92,6 +107,7 @@ class HookCache:
             "path": str(path),
             "mtime_ns": stat.st_mtime_ns,
             "size": stat.st_size,
+            "sha256": self._content_hash(path),
             "namespace": self.namespace,
             **payload,
         }
