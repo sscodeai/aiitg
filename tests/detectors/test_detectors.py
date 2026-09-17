@@ -36,6 +36,12 @@ class TestHiddenStyle:
         hits = [ev for ev in report.evidence if ev.detector_id == "DET-002"]
         assert len(hits) >= 1
 
+    def test_pdf_transparent_text_only_flags_transparent_span(self, scan_file, tmp_path):
+        f = builders.build_pdf_transparent_text(tmp_path / "transparent.pdf")
+        report = scan_file(f)
+        hits = [ev for ev in report.evidence if ev.detector_id == "DET-002"]
+        assert [h.raw["text"].strip() for h in hits] == ["transparent instruction"]
+
     def test_benign_clean(self, scan_file, tmp_path):
         f = builders.build_docx_benign(tmp_path / "clean.docx")
         report = scan_file(f)

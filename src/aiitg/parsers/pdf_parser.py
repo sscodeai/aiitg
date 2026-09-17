@@ -1,8 +1,8 @@
 """pdf parser: pypdf → pages with text spans + transparency.
 
-Extracts per-page text with visitor callbacks to capture font size and the
-text matrix, plus ExtGState alpha for transparency detection. Encrypted or
-unreadable documents degrade to ``warnings`` instead of crashing.
+Extracts per-page text with visitor callbacks to capture font size, the text
+matrix, and best-effort span-level ExtGState alpha. Encrypted or unreadable
+documents degrade to ``warnings`` instead of crashing.
 """
 
 from __future__ import annotations
@@ -16,8 +16,23 @@ from aiitg.parsers.base import register_parser
 
 
 def _extract_spans(page) -> list[dict]:
-    """Extract text spans with font_size and text matrix via visitor callback."""
+    """Extract text spans with font_size, text matrix, and current fill alpha."""
     spans: list[dict] = []
+    alpha_by_state = _extract_alpha_states(page)
+    alpha_stack: list[float] = []
+    current_alpha = 1.0
+
+    def before_operand(operator, operands, cm, tm) -> None:  # type: ignore[no-untyped-def]
+        nonlocal current_alpha
+        if operator == b"q":
+            alpha_stack.append(current_alpha)
+            return
+        if operator == b"Q":
+            current_alpha = alpha_stack.pop() if alpha_stack else 1.0
+            return
+        if operator == b"gs" and operands:
+            current_alpha = alpha_by_state.get(str(operands[0]), current_alpha)
+
     # pypdf 6.x: extract_text(visitor_text=callable)
     # visitor receives (text, cm, tm, font_dict, font_size)
 
@@ -30,47 +45,46 @@ def _extract_spans(page) -> list[dict]:
                 "font_size": float(font_size) if font_size else None,
                 "cm": list(cm) if cm is not None else None,
                 "tm": list(tm) if tm is not None else None,
+                "alpha": current_alpha,
             }
         )
 
     try:
-        page.extract_text(visitor_text=visitor)
+        page.extract_text(visitor_operand_before=before_operand, visitor_text=visitor)
     except Exception:  # noqa: BLE001
         return []
     return spans
 
 
-def _extract_alpha(page) -> float | None:
-    """Best-effort ExtGState alpha (transparency) for the page.
+def _extract_alpha_states(page) -> dict[str, float]:
+    """Best-effort ExtGState fill/stroke alpha values keyed by resource name.
 
     Reads /Resources/ExtGState → /ca (fill alpha) or /CA (stroke alpha).
     """
     try:
         resources = page.get("/Resources")
         if resources is None:
-            return None
+            return {}
         eg = resources.get("/ExtGState")
         if eg is None:
-            return None
+            return {}
         eg = eg.get_object()
-        alphas: list[float] = []
+        alphas: dict[str, float] = {}
         if isinstance(eg, dict):
-            for _, gs in eg.items():
+            for name, gs in eg.items():
                 gs = gs.get_object()
                 if isinstance(gs, dict):
                     for key in ("/ca", "/CA"):
                         val = gs.get(key)
                         if val is not None:
                             try:
-                                alphas.append(float(val))
+                                alphas[str(name)] = float(val)
+                                break
                             except (TypeError, ValueError):
                                 pass
-        if not alphas:
-            return None
-        # use the most transparent (min alpha) as the page's effective transparency
-        return min(alphas)
+        return alphas
     except Exception:  # noqa: BLE001
-        return None
+        return {}
 
 
 def _extract_annotations(page) -> list[dict]:
@@ -116,10 +130,9 @@ class PdfParser:
                 spans=spans,
                 annotations=_extract_annotations(page),
             )
-            # transparency from page resources
-            alpha = _extract_alpha(page)
-            if alpha is not None:
-                pdf_page.raw["alpha"] = alpha
+            alphas = [float(alpha) for s in spans if isinstance((alpha := s.get("alpha")), (int, float))]
+            if alphas:
+                pdf_page.raw["min_alpha"] = min(alphas)
             doc_model.pages.append(pdf_page)
 
             # paragraph view: whole page as one paragraph (per-span runs)
@@ -127,7 +140,7 @@ class PdfParser:
                 TextRun(
                     text=s["text"],
                     font_size=s.get("font_size"),
-                    transparency=pdf_page.raw.get("alpha"),
+                    transparency=s.get("alpha"),
                     raw={"tm": s.get("tm")},
                 )
                 for s in spans
