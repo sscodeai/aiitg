@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -39,6 +40,39 @@ class FormatRegistry:
         if handler.sniff is not None:
             self._sniffers.append(handler)
 
+    def _handler_for_kind(self, kind: str) -> FormatHandler | None:
+        seen: set[int] = set()
+        for handler in self._handlers.values():
+            if id(handler) in seen:
+                continue
+            seen.add(id(handler))
+            if handler.kind == kind:
+                return handler
+        return None
+
+    def _sniff_path(self, path: Path, head: bytes) -> FormatHandler | None:
+        """Best-effort content detection for files with misleading extensions."""
+        if head.startswith(b"%PDF"):
+            return self._handler_for_kind("pdf")
+        if head.startswith(b"\xd0\xcf\x11\xe0"):
+            return self._handler_for_kind("xls")
+        stripped = head[:512].lstrip().lower()
+        if stripped.startswith((b"<!doctype html", b"<html")):
+            return self._handler_for_kind("html")
+        if head.startswith(b"PK"):
+            try:
+                with zipfile.ZipFile(path) as zf:
+                    names = set(zf.namelist())
+            except (OSError, zipfile.BadZipFile):
+                return None
+            if "word/document.xml" in names:
+                return self._handler_for_kind("docx")
+            if "xl/workbook.xml" in names:
+                return self._handler_for_kind("xlsx")
+            if "ppt/presentation.xml" in names:
+                return self._handler_for_kind("pptx")
+        return None
+
     def detect(self, path: str | Path) -> FormatHandler | None:
         """Detect format by extension, falling back to content sniffing."""
         p = Path(path)
@@ -51,6 +85,9 @@ class FormatRegistry:
             head = p.read_bytes()[:4096]
         except OSError:
             return None
+        path_handler = self._sniff_path(p, head)
+        if path_handler is not None:
+            return path_handler
         for h in self._sniffers:
             if h.sniff is not None and h.sniff(head):
                 return h

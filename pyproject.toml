@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "aiitg"
-version = "0.1.0"
+version = "0.2.0"
 description = "AI Input Trust Gateway — hidden content auditor for documents fed to LLMs/Agents"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -32,6 +32,13 @@ dependencies = [
     "python-pptx>=1.0",
     "xlrd>=2.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/sscodeai/aiitg"
+Repository = "https://github.com/sscodeai/aiitg"
+Issues = "https://github.com/sscodeai/aiitg/issues"
+Changelog = "https://github.com/sscodeai/aiitg/blob/main/CHANGELOG.md"
+Security = "https://github.com/sscodeai/aiitg/blob/main/SECURITY.md"
 
 [project.optional-dependencies]
 dev = [

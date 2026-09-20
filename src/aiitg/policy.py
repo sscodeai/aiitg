@@ -116,6 +116,13 @@ def _any_hidden_content() -> Condition:
     return cond
 
 
+def _scan_failed() -> Condition:
+    def cond(report: ScanReport, label: TrustLabelValue, risk: float) -> bool:
+        return report.status != "ok"
+
+    return cond
+
+
 class PolicyEngine:
     """Evaluates ordered rules against a report; first match wins."""
 
@@ -144,14 +151,21 @@ def default_policy() -> PolicyEngine:
     """The built-in conservative policy (Assume Compromise).
 
     Order matters — first match wins:
-    1. dangerous label          → block
-    2. hidden content detected  → quarantine (usable after sanitize)
-    3. caution label            → human_approval (suspicious, needs a human)
-    4. everything else          → allow (fallback in engine)
+    1. scan failed / partial    → block
+    2. dangerous label          → block
+    3. hidden content detected  → quarantine (usable after sanitize)
+    4. caution label            → human_approval (suspicious, needs a human)
+    5. everything else          → allow (fallback in engine)
     """
     return PolicyEngine(
         name="default",
         rules=[
+            PolicyRule(
+                id="POL-000",
+                action=DecisionAction.BLOCK,
+                reason="scan did not complete cleanly; block before it reaches any LLM/Agent",
+                condition=_scan_failed(),
+            ),
             PolicyRule(
                 id="POL-001",
                 action=DecisionAction.BLOCK,

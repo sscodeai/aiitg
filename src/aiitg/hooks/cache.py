@@ -5,7 +5,16 @@ parser imports plus the parse itself are paid on every read (~390 ms measured fo
 docx). This cache short-circuits *before* ``process_file`` and brings a repeat read of
 an unchanged document down to the interpreter floor (~46 ms).
 
-Entries are keyed on ``(path, mtime_ns, size)`` so a modified file is always a miss.
+Two properties matter for a security tool:
+
+* **Identity, not just mtime.** Entries are keyed on ``(path, mtime_ns, size)`` and carry both a
+  content hash and a :attr:`HookCache.namespace` describing the build, sanitizer mode, detector set
+  and policy that produced the verdict. A different hash or namespace is a miss, so replacing bytes
+  while preserving stat metadata, upgrading aiitg, or changing ``--mode`` cannot reuse an old
+  decision.
+* **A damaged entry must be a miss, never a verdict.** Any missing key or wrong type makes
+  :meth:`HookCache.get` return ``None``, so corruption cannot turn into a deny for a clean file.
+
 The directory is inert data: deleting it is always safe.
 """
 
@@ -21,10 +30,23 @@ __all__ = ["HookCache"]
 
 
 class HookCache:
-    """JSON-file cache keyed on a file's identity (path + mtime_ns + size)."""
+    """JSON-file cache keyed on a file's identity (path + mtime_ns + size) and a namespace."""
 
-    def __init__(self, directory: str | Path) -> None:
+    #: Every entry must carry these keys; anything else is treated as absent.
+    REQUIRED_KEYS: tuple[str, ...] = (
+        "namespace",
+        "path",
+        "mtime_ns",
+        "size",
+        "sha256",
+        "action",
+        "label",
+        "report",
+    )
+
+    def __init__(self, directory: str | Path, *, namespace: str = "") -> None:
         self.directory = Path(directory).expanduser()
+        self.namespace = namespace
 
     @staticmethod
     def _key(path: Path, mtime_ns: int, size: int) -> str:
@@ -34,8 +56,28 @@ class HookCache:
     def _entry_path(self, path: Path, mtime_ns: int, size: int) -> Path:
         return self.directory / f"{self._key(path, mtime_ns, size)}.json"
 
+    @staticmethod
+    def _content_hash(path: str | Path) -> str | None:
+        digest = hashlib.sha256()
+        try:
+            with open(path, "rb") as fh:
+                for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+                    digest.update(chunk)
+        except OSError:
+            return None
+        return digest.hexdigest()
+
+    def _is_usable(self, data: Any) -> bool:
+        if not isinstance(data, dict):
+            return False
+        if data.get("namespace") != self.namespace:
+            return False
+        if any(key not in data for key in self.REQUIRED_KEYS):
+            return False
+        return isinstance(data.get("report"), dict) and isinstance(data.get("sha256"), str)
+
     def get(self, path: str | Path) -> dict[str, Any] | None:
-        """Return the cached entry, or ``None`` on miss/corruption/stat change."""
+        """Return the cached entry, or ``None`` on miss / corruption / identity change."""
         try:
             stat = os.stat(path)
         except OSError:
@@ -47,9 +89,11 @@ class HookCache:
             data = json.loads(entry.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             return None
-        if not isinstance(data, dict):
+        if not self._is_usable(data):
             return None
-        if data.get("mtime_ns") != stat.st_mtime_ns or data.get("size") != stat.st_size:
+        if data["mtime_ns"] != stat.st_mtime_ns or data["size"] != stat.st_size:
+            return None
+        if data["sha256"] != self._content_hash(path):
             return None
         return data
 
@@ -63,8 +107,12 @@ class HookCache:
             "path": str(path),
             "mtime_ns": stat.st_mtime_ns,
             "size": stat.st_size,
+            "sha256": self._content_hash(path),
+            "namespace": self.namespace,
             **payload,
         }
+        if not self._is_usable(data):
+            return
         self.directory.mkdir(parents=True, exist_ok=True)
         target = self._entry_path(Path(path), stat.st_mtime_ns, stat.st_size)
         tmp = target.with_name(f"{target.name}.{os.getpid()}.tmp")

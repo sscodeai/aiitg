@@ -42,6 +42,20 @@ class TestPolicyEngine:
         assert result.decision is not None
         assert result.decision.action == DecisionAction.ALLOW
 
+    def test_default_policy_blocks_scan_errors_even_with_safe_label(self):
+        from aiitg.core.evidence import ScanReport
+        from aiitg.policy import default_policy
+
+        report = ScanReport(
+            file="f.docx",
+            kind="docx",
+            status="error",
+            error={"kind": "detector_failed", "message": "DET-001 failed"},
+        )
+        decision = default_policy().evaluate(report, TrustLabelValue.SAFE)
+        assert decision.action == DecisionAction.BLOCK
+        assert decision.rule_id == "POL-000"
+
     def test_custom_rule_first_match(self):
         engine = PolicyEngine(
             rules=[

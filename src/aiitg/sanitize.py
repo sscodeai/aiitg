@@ -98,7 +98,7 @@ class Sanitizer:
                 elif loc.char_range is not None:
                     # char-level: handled below via regex on the paragraph text
                     pass
-            if loc.sheet is not None:
+            if ev.detector_id == "DET-004" and loc.sheet is not None and loc.row is None and loc.col is None:
                 hidden_sheets.add(loc.sheet)
 
         removed: list[dict] = []

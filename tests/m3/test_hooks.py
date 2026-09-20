@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from aiitg import __version__ as aiitg_version
 from aiitg.hooks import claude_code
 from aiitg.hooks.claude_code import (
     HookConfig,
@@ -161,6 +162,12 @@ class TestPreToolUseDecisions:
         assert outcome.permission_decision == "allow"
         assert "not enforced" in outcome.reason
 
+    def test_misleading_extension_is_sniffed_and_blocked(self, tmp_path):
+        f = builders.build_docx_with_zerowidth(tmp_path / "evil.txt")
+        outcome = handle_pretooluse(payload(f), config=config(tmp_path))
+        assert outcome.permission_decision == "deny"
+        assert "POL-001" in outcome.reason
+
     def test_other_tool_and_event_are_ignored(self, tmp_path):
         f = builders.build_docx_with_zerowidth(tmp_path / "evil.docx")
         bash = handle_pretooluse(payload(f, tool="Bash"), config=config(tmp_path))
@@ -295,6 +302,29 @@ class TestDecisionCache:
         handle_pretooluse(payload(f), config=cfg)
         assert calls["n"] == 2, "a modified file must not be served from the cache"
 
+    def test_same_stat_but_changed_bytes_is_a_miss(self, tmp_path, monkeypatch):
+        f = builders.build_docx_benign(tmp_path / "ok.docx")
+        calls = {"n": 0}
+        real = claude_code.process_file
+
+        def counting(*args, **kwargs):
+            calls["n"] += 1
+            return real(*args, **kwargs)
+
+        monkeypatch.setattr(claude_code, "process_file", counting)
+        cfg = config(tmp_path)
+        handle_pretooluse(payload(f), config=cfg)
+        stat = os.stat(f)
+
+        original = f.read_bytes()
+        replacement = original[:-1] + (b"0" if original[-1:] != b"0" else b"1")
+        assert len(replacement) == len(original)
+        f.write_bytes(replacement)
+        os.utime(f, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+
+        handle_pretooluse(payload(f), config=cfg)
+        assert calls["n"] == 2, "content changes must invalidate the cache even if stat metadata is preserved"
+
     def test_cache_can_be_disabled(self, tmp_path, monkeypatch):
         f = builders.build_docx_benign(tmp_path / "ok.docx")
         calls = {"n": 0}
@@ -307,6 +337,77 @@ class TestDecisionCache:
         monkeypatch.setattr(claude_code, "process_file", counting)
         cfg = config(tmp_path, cache_dir=None)
         handle_pretooluse(payload(f), config=cfg)
+        handle_pretooluse(payload(f), config=cfg)
+        assert calls["n"] == 2
+
+    def test_a_changed_namespace_is_a_miss(self, tmp_path, monkeypatch):
+        """A different build / mode / detector set must not reuse yesterday's verdict."""
+        f = builders.build_docx_with_zerowidth(tmp_path / "evil.docx")
+        calls = {"n": 0}
+        real = claude_code.process_file
+
+        def counting(*args, **kwargs):
+            calls["n"] += 1
+            return real(*args, **kwargs)
+
+        monkeypatch.setattr(claude_code, "process_file", counting)
+        cfg_strip = config(tmp_path)
+        handle_pretooluse(payload(f), config=cfg_strip)
+        assert calls["n"] == 1
+
+        # same file, same stat, different sanitizer mode -> namespace differs -> must re-decide
+        cfg_redact = config(tmp_path, mode="redact")
+        handle_pretooluse(payload(f), config=cfg_redact)
+        assert calls["n"] == 2, "a mode change must not be served from the cache"
+
+    def test_namespace_covers_build_detectors_and_policy(self, tmp_path):
+        cfg = config(tmp_path)
+        base = claude_code._cache_namespace(cfg)
+        assert aiitg_version in base
+        assert "|strip|" in base
+        assert base != claude_code._cache_namespace(config(tmp_path, mode="redact"))
+
+    def test_structurally_damaged_entry_is_a_miss_not_a_verdict(self, tmp_path, monkeypatch):
+        """A truncated/garbled entry must never become a deny for a clean file."""
+        f = builders.build_docx_benign(tmp_path / "ok.docx")
+        calls = {"n": 0}
+        real = claude_code.process_file
+
+        def counting(*args, **kwargs):
+            calls["n"] += 1
+            return real(*args, **kwargs)
+
+        monkeypatch.setattr(claude_code, "process_file", counting)
+        cfg = config(tmp_path)
+        first = handle_pretooluse(payload(f), config=cfg)
+        assert first.permission_decision == "allow"
+        assert calls["n"] == 1
+
+        for entry in (tmp_path / "cache").glob("*.json"):
+            data = json.loads(entry.read_text(encoding="utf-8"))
+            del data["report"]  # valid JSON, structurally incomplete
+            entry.write_text(json.dumps(data), encoding="utf-8")
+
+        second = handle_pretooluse(payload(f), config=cfg)
+        assert calls["n"] == 2, "a damaged entry must be treated as a miss"
+        assert second.permission_decision == "allow", "cache damage must not flip a verdict"
+
+    def test_entry_with_a_foreign_namespace_is_ignored(self, tmp_path, monkeypatch):
+        f = builders.build_docx_benign(tmp_path / "ok.docx")
+        calls = {"n": 0}
+        real = claude_code.process_file
+
+        def counting(*args, **kwargs):
+            calls["n"] += 1
+            return real(*args, **kwargs)
+
+        monkeypatch.setattr(claude_code, "process_file", counting)
+        cfg = config(tmp_path)
+        handle_pretooluse(payload(f), config=cfg)
+        for entry in (tmp_path / "cache").glob("*.json"):
+            data = json.loads(entry.read_text(encoding="utf-8"))
+            data["namespace"] = "some-other-build|strip|0:x|y"
+            entry.write_text(json.dumps(data), encoding="utf-8")
         handle_pretooluse(payload(f), config=cfg)
         assert calls["n"] == 2
 
@@ -340,21 +441,106 @@ class TestRenderOutcome:
         assert "additionalContext" not in hso
         assert code == 0
 
-    def test_updated_input_and_context_are_emitted_when_present(self):
+    def test_updated_input_and_context_are_emitted_for_pretooluse(self):
         outcome = HookOutcome(
             "allow",
             "ok",
             updated_input={"file_path": "/tmp/x.txt"},
             additional_context="sanitized",
             exit_code=2,
-            event="PostToolUse",
         )
         text, code = render_outcome(outcome)
         hso = json.loads(text)["hookSpecificOutput"]
+        assert hso["hookEventName"] == "PreToolUse"
         assert hso["updatedInput"] == {"file_path": "/tmp/x.txt"}
         assert hso["additionalContext"] == "sanitized"
-        assert hso["hookEventName"] == "PostToolUse"
         assert code == 2
+
+    def test_posttooluse_drops_fields_the_event_does_not_honour(self):
+        """`updatedInput` is a PreToolUse field; carrying it on PostToolUse would be a contract break."""
+        outcome = HookOutcome(
+            "allow",
+            "ok",
+            updated_input={"file_path": "/tmp/x.txt"},
+            additional_context="sanitized",
+            event="PostToolUse",
+        )
+        hso = json.loads(render_outcome(outcome)[0])["hookSpecificOutput"]
+        assert set(hso) == {"hookEventName", "additionalContext"}
+
+    def test_emit_json_false_produces_no_stdout(self):
+        text, code = render_outcome(HookOutcome("allow", "reason", exit_code=2, event="PostToolUse", emit_json=False))
+        assert text == ""
+        assert code == 2
+
+
+class TestEventContract:
+    """The emitted field set must match the documented per-event contract.
+
+    This is the test class that P1 needed: `PostToolUse` does not honour `permissionDecision`
+    (the tool has already run), so emitting it either drops the warning or fails schema validation.
+    """
+
+    @staticmethod
+    def _hso(outcome):
+        text, _ = render_outcome(outcome)
+        if not text:
+            return None
+        body = json.loads(text)
+        assert set(body) <= {"hookSpecificOutput"}, f"unexpected top-level keys: {set(body)}"
+        return body["hookSpecificOutput"]
+
+    def _assert_contract(self, outcome, event: str):
+        hso = self._hso(outcome)
+        if hso is None:
+            return None
+        assert hso["hookEventName"] == event
+        allowed = claude_code.DOCUMENTED_FIELDS[event]
+        extra = set(hso) - allowed
+        assert not extra, f"{event} emitted fields the event does not honour: {sorted(extra)}"
+        return hso
+
+    def test_pretooluse_outcomes_use_pretooluse_fields_only(self, tmp_path):
+        cfg = config(tmp_path)
+        evil = builders.build_docx_with_zerowidth(tmp_path / "evil.docx")
+        ok = builders.build_docx_benign(tmp_path / "ok.docx")
+        tiny = builders.build_docx_with_tiny_font(tmp_path / "tiny.docx")
+        legacy = tmp_path / "legacy.doc"
+        legacy.write_bytes(b"\xd0\xcf\x11\xe0 fake")
+
+        cases = [
+            handle_pretooluse(payload(ok), config=cfg),
+            handle_pretooluse(payload(evil), config=cfg),
+            handle_pretooluse(payload(tiny), config=cfg),
+            handle_pretooluse(payload(legacy), config=cfg),
+            handle_pretooluse(None, config=cfg),
+            handle_pretooluse(payload(tmp_path / "notes.md"), config=cfg),
+        ]
+        for outcome in cases:
+            hso = self._assert_contract(outcome, "PreToolUse")
+            assert hso is not None
+            assert hso["permissionDecision"] in {"allow", "deny", "ask", "defer"}
+
+    def test_posttooluse_never_emits_permission_decision(self, tmp_path):
+        cfg = config(tmp_path)
+        with_findings = payload(None, event="PostToolUse", tool="WebFetch")
+        with_findings["tool_response"] = "text\u200bhere"
+        clean = payload(None, event="PostToolUse", tool="WebFetch")
+        clean["tool_response"] = "text here"
+
+        for outcome in (handle_posttooluse(with_findings, config=cfg), handle_posttooluse(clean, config=cfg)):
+            hso = self._assert_contract(outcome, "PostToolUse")
+            if hso is not None:
+                assert "permissionDecision" not in hso
+                assert "permissionDecisionReason" not in hso
+                assert "updatedToolOutput" not in hso
+
+    def test_posttooluse_clean_result_emits_nothing(self, tmp_path):
+        body = payload(None, event="PostToolUse", tool="WebFetch")
+        body["tool_response"] = "nothing hidden"
+        text, code = render_outcome(handle_posttooluse(body, config=config(tmp_path)))
+        assert text == ""
+        assert code == 0
 
 
 class TestPostToolUse:
@@ -365,11 +551,18 @@ class TestPostToolUse:
         assert outcome.permission_decision == "allow"
         assert outcome.additional_context
         assert "invisible" in outcome.additional_context
-        text, _ = render_outcome(outcome)
+        text, code = render_outcome(outcome)
         hso = json.loads(text)["hookSpecificOutput"]
         assert hso["hookEventName"] == "PostToolUse"
-        # documented as unverified per-tool output shape -> never rewritten in M3.0
-        assert "updatedToolOutput" not in hso
+        assert set(hso) == {"hookEventName", "additionalContext"}
+        assert code == 0
+
+    def test_bidi_characters_are_flagged(self, tmp_path):
+        body = payload(None, event="PostToolUse", tool="WebFetch")
+        body["tool_response"] = "visible\u202eevil"
+        outcome = handle_posttooluse(body, config=config(tmp_path))
+        assert outcome.additional_context
+        assert "bidi" in outcome.additional_context
 
     def test_clean_tool_result_is_transparent(self, tmp_path):
         body = payload(None, event="PostToolUse", tool="WebFetch")
@@ -377,15 +570,50 @@ class TestPostToolUse:
         outcome = handle_posttooluse(body, config=config(tmp_path))
         assert outcome.permission_decision == "allow"
         assert outcome.additional_context is None
+        assert render_outcome(outcome) == ("", 0)
 
-    def test_wrong_event_is_ignored(self, tmp_path):
+    def test_wrong_event_emits_nothing(self, tmp_path):
         outcome = handle_posttooluse(payload(None), config=config(tmp_path))
         assert outcome.permission_decision == "allow"
+        assert render_outcome(outcome) == ("", 0)
 
-    def test_malformed_payload_denies(self, tmp_path):
+    def test_malformed_payload_uses_exit_2_and_no_json(self, tmp_path):
         outcome = handle_posttooluse(None, config=config(tmp_path))
-        assert outcome.permission_decision == "deny"
-        assert outcome.exit_code == 2
+        text, code = render_outcome(outcome)
+        assert text == "", "PostToolUse must not emit a permission verdict"
+        assert code == 2
+        assert "malformed" in outcome.reason
+
+    def test_malformed_payload_stays_silent_when_fail_open(self, tmp_path):
+        outcome = handle_posttooluse(None, config=config(tmp_path, fail_closed=False))
+        assert render_outcome(outcome) == ("", 0)
+
+    def test_findings_are_written_to_the_audit_log(self, tmp_path):
+        audit = tmp_path / "audit.jsonl"
+        body = payload(None, event="PostToolUse", tool="WebFetch")
+        body["tool_response"] = "a\u200bb"
+        outcome = handle_posttooluse(body, config=config(tmp_path, audit_path=audit))
+        assert outcome.audit is not None
+        entry = json.loads(audit.read_text(encoding="utf-8").strip())
+        assert entry["decision"]["rule_id"] == "POL-TOOL-001"
+        assert entry["decision"]["action"] == "allow", "PostToolUse cannot block; the record must say so"
+        assert "invisible=1" in entry["note"]
+
+    def test_no_audit_flag_writes_nothing(self, tmp_path):
+        audit = tmp_path / "audit.jsonl"
+        body = payload(None, event="PostToolUse", tool="WebFetch")
+        body["tool_response"] = "a\u200bb"
+        handle_posttooluse(body, config=config(tmp_path))
+        assert not audit.exists()
+
+    def test_scan_is_bounded_by_max_posttooluse_texts(self, tmp_path):
+        body = payload(None, event="PostToolUse", tool="WebFetch")
+        body["tool_response"] = [f"chunk {i}" for i in range(200)]
+        body["tool_response"][150] = "hidden\u200binstruction"
+        limited = handle_posttooluse(body, config=config(tmp_path, max_posttooluse_texts=10))
+        full = handle_posttooluse(body, config=config(tmp_path, max_posttooluse_texts=200))
+        assert limited.additional_context is None, "scan must stop at the configured bound"
+        assert full.additional_context is not None
 
 
 class TestConsoleScript:

@@ -433,8 +433,10 @@ adapters, the HTTP proxy, and any auto-writing of user settings.
 ## M3.0 as-built
 
 What shipped: `src/aiitg/hooks/{__init__,cache,claude_code}.py`, `src/aiitg/cli/hook_cmd.py`, a
-4-line registration diff in `src/aiitg/cli/app.py`, and `tests/m3/`. Total suite: **152 tests
-(105 pre-existing + 47 new), 0 failures**; `ruff check src tests` and `mypy src` clean.
+4-line registration diff in `src/aiitg/cli/app.py`, and `tests/m3/`. Total suite: **183 tests**,
+0 failures; `ruff check src tests` and `mypy src` clean. The count is now enforced by
+`tests/test_readme_badge.py`, which fails when the README badge or its `make test # N tests` comment
+disagrees with the collected test count (it had gone stale twice).
 
 Deviations from the plan, and why:
 
@@ -457,6 +459,70 @@ Deviations from the plan, and why:
 5. **Cache hit re-writes the quarantined substitute** if it is missing, and a cache miss for a
    `status == "error"` report is cached like any other decision (the report carries the error, so a
    repeat read does not re-parse a corrupt file).
+
+Post-review fixes (review found one contract bug and one silent-failure gap):
+
+6. **`render_outcome` is event-aware.** It emitted `permissionDecision` /
+   `permissionDecisionReason` for *every* event, but the documented per-event table gives
+   `permissionDecision` to `PreToolUse` and `PreModelSwitch` only — `PostToolUse` uses top-level
+   `decision: "block"` + `reason`, and its only context field is `additionalContext`. The first
+   `PostToolUse` payload therefore either had its warning dropped or was rejected as
+   schema-invalid. The field sets now live in one place (`DOCUMENTED_FIELDS`) and `render_outcome`
+   renders per event; `tests/m3/test_hooks.py::TestEventContract` asserts the emitted field set is a
+   subset of the documented set for every outcome kind. The old tests only asserted the absence of
+   `updatedToolOutput`, which is why a green suite hid the bug.
+7. **PostToolUse can no longer emit a verdict at all.** A clean result prints nothing (exit 0), a
+   finding prints `additionalContext` only, and a malformed payload or internal fault uses the
+   documented "exit 2 + stderr" channel with no JSON on stdout.
+8. **`hook-config` embeds an absolute executable path** (resolved with `shutil.which`, `shlex.quote`d)
+   and warns on stderr when the executable is not on PATH: a hook command that cannot start is a
+   *non-blocking* error in Claude Code, so the document would reach the model **unscanned** while the
+   user believes it was checked. `aiitg hook doctor` checks the executable, the quarantine and cache
+   directories, the fail-closed default and the enforced-format count, and exits 1 on any failure.
+9. **The PostToolUse scan is bounded** (`HookConfig.max_posttooluse_texts`, default 64) so a large
+   tool result cannot force a full-text scan on every call.
+
+Second review round — what else was wrong (all fixed in this branch):
+
+10. **`aiitg hook posttooluse` accepted options it could not apply** (`--mode`, `--cache-dir`,
+    `--quarantine-dir`, `--max-file-bytes`, `--queue`). A flag that silently does nothing is the same
+    failure class as a hook that silently does not run. Only `--audit` and `--fail-open` remain, and
+    `--audit` now actually records PostToolUse findings (`POL-TOOL-001`, action `allow`, counts in the
+    note) instead of being ignored.
+11. **`hook doctor` did not check that the hook was wired.** It now reads the project and user
+    `.claude/settings.json` / `settings.local.json` (`--settings` to point elsewhere), finds a
+    `PreToolUse` command calling `aiitg hook pretooluse`, and verifies that command's executable
+    resolves — a wired-but-unstartable hook is reported as FAIL rather than looking fine.
+12. **Cached verdicts were not bound to the build.** The key is still `(path, mtime_ns, size)`, but
+    entries now carry a namespace of `version | mode | detector set | policy rules` and a mismatched
+    namespace is a miss, so an upgrade or `--mode` change cannot keep serving yesterday's verdict for
+    an unchanged file. (`_cache_namespace`.)
+13. **A damaged cache entry could become a `deny`.** `HookCache.get` now validates the entry's
+    required keys and types and returns a miss for anything structurally incomplete, so corruption
+    cannot flip a clean document. Verified live: deleting `report` from an entry and re-running still
+    produced `allow`.
+14. **`allow` decisions stored the document's text.** Only a `quarantine` decision needs
+    `sanitized_text` (to write the substitute), so everything else stores an empty string instead of
+    copying clean document bodies into the cache directory.
+15. **Repository hygiene**: version bumped to `0.2.0` with a `CHANGELOG.md`; `SECURITY.md` (in-scope /
+    out-of-scope threat model, including "the cache is not a trust boundary") and `CONTRIBUTING.md`;
+    `[project.urls]` in `pyproject.toml`; README install path for end users (`uv tool install` /
+    `pipx install`, because the hook needs `aiitg` on `PATH`) and a link to this document.
+
+## Known gaps (M3.0, deliberate)
+
+- No prune/cleanup command for the quarantine and decision-cache directories (they are inert data and
+  safe to delete, but nothing expires them; the plan's §2.6 "orphan cleanup CLI" is not implemented).
+- Repeated reads of the same unchanged document append one audit line per read (correct for an audit
+  trail, but worth knowing before sizing the log).
+- The `decision is None` branch in the adapter is unreachable in practice: `run_scan` already returns
+  `status == "error"` for unsupported formats, which the pipeline turns into `POL-001` → `block`.
+- The cache directory is user-writable, so a local attacker with the same level of access can forge a
+  verdict. Documented in `SECURITY.md` as out of scope (the cache is not a trust boundary); a
+  tamper-evident cache would need signing and is not attempted here.
+- Still unverified end-to-end: `PostToolUse.updatedToolOutput` rewriting (needs per-tool output
+  shapes) and anything requiring a live Claude Code session (matcher/`if` resolution, timeouts, the
+  `ask` prompt rendering, `@`-referenced files).
 
 Measured latency, real console script (`.venv/bin/aiitg hook pretooluse`, 5 runs, docx):
 
