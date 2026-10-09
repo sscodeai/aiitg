@@ -18,6 +18,7 @@ import typer
 
 from aiitg.hooks.claude_code import (
     DEFAULT_ENFORCED_EXTENSIONS,
+    RULE_FILE_NAMES,
     HookConfig,
     HookOutcome,
     handle_posttooluse,
@@ -265,7 +266,8 @@ def doctor(
         {
             "check": "enforced formats",
             "ok": True,
-            "detail": f"{len(DEFAULT_ENFORCED_EXTENSIONS)} extensions (parseable + unparseable document formats)",
+            "detail": f"{len(DEFAULT_ENFORCED_EXTENSIONS)} extensions + {len(RULE_FILE_NAMES)} rule-file names "
+            "(documents, source code and agent rule files)",
         }
     )
 

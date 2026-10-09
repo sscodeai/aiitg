@@ -33,13 +33,16 @@ from aiitg.audit import AuditLog
 from aiitg.core.detector import default_detector_registry
 from aiitg.core.evidence import Evidence, Location, ScanReport, Severity
 from aiitg.hooks.cache import HookCache
+from aiitg.parsers.text_parser import CODE_EXTENSIONS, RULE_FILE_NAMES
 from aiitg.pipeline import process_file
 from aiitg.policy import Decision, DecisionAction, default_policy
 from aiitg.sanitize import BIDI_RE, INVISIBLE_RE
 
 __all__ = [
+    "CODE_EXTENSIONS",
     "DEFAULT_ENFORCED_EXTENSIONS",
     "PARSEABLE_EXTENSIONS",
+    "RULE_FILE_NAMES",
     "UNPARSEABLE_DOC_EXTENSIONS",
     "HookConfig",
     "HookOutcome",
@@ -57,7 +60,11 @@ PARSEABLE_EXTENSIONS = frozenset({".docx", ".xlsx", ".xlsm", ".xls", ".pdf", ".h
 #: document must not be treated as a clean one.
 UNPARSEABLE_DOC_EXTENSIONS = frozenset({".doc", ".rtf", ".odt", ".ppt", ".docm", ".xlsb"})
 
-DEFAULT_ENFORCED_EXTENSIONS = PARSEABLE_EXTENSIONS | UNPARSEABLE_DOC_EXTENSIONS
+#: Source code is enforced too: a Code LLM reads the files it completes, so an
+#: instruction planted in a comment reaches the model exactly like a document does
+#: (arXiv:2610.05139). Agent rule files are matched by name (``.cursorrules`` has no
+#: extension to key on) and are instruction files by construction.
+DEFAULT_ENFORCED_EXTENSIONS = PARSEABLE_EXTENSIONS | UNPARSEABLE_DOC_EXTENSIONS | CODE_EXTENSIONS
 
 _TOOL_NAME = "Read"
 
@@ -314,7 +321,8 @@ def _handle_pretooluse(payload: dict[str, Any], cfg: HookConfig) -> HookOutcome:
 
     path = Path(raw_path)
     suffix = path.suffix.lower()
-    if suffix not in cfg.enforce_extensions:
+    name = path.name.lower()
+    if suffix not in cfg.enforce_extensions and name not in RULE_FILE_NAMES:
         return HookOutcome("allow", f"aiitg: extension {suffix or '(none)'} not enforced")
 
     if not path.is_file():
@@ -418,7 +426,7 @@ def _handle_pretooluse(payload: dict[str, Any], cfg: HookConfig) -> HookOutcome:
     return HookOutcome(
         "deny",
         f"aiitg: {decision.rule_id} blocked the read (trust label {label_value}, {note}). "
-        "The file's hidden content never reached the model.",
+        "The file was not sent to the model.",
         audit=audit_entry,
     )
 
