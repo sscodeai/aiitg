@@ -14,6 +14,7 @@ from aiitg.parsers import (
     ooxml_raw,
     pdf_parser,
     pptx_parser,
+    text_parser,
     xls_parser,
     xlsx_parser,
 )
@@ -27,6 +28,7 @@ ALL_HANDLERS: list[FormatHandler] = [
         pdf_parser.PdfParser,
         html_parser.HtmlParser,
         pptx_parser.PptxParser,
+        text_parser.TextParser,
     )
 ]
 

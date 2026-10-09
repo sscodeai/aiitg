@@ -21,6 +21,7 @@ def register_parser(
     kind: str,
     extensions: Iterable[str],
     sniff: Callable[[bytes], bool] | None = None,
+    basenames: Iterable[str] = (),
 ) -> Callable[[type[Parser]], type[Parser]]:
     """Decorator: register a parser class for the given kind/extensions.
 
@@ -29,10 +30,19 @@ def register_parser(
         @register_parser("docx", ("docx",))
         class DocxParser:
             def parse(self, path): ...
+
+    ``basenames`` registers exact (lowercased) file names for formats that have no
+    usable extension, e.g. ``.cursorrules`` or ``AGENTS.md``-style rule files.
     """
 
     def deco(cls: type[Parser]) -> type[Parser]:
-        handler = FormatHandler(kind=kind, extensions=tuple(extensions), parser_cls=cls, sniff=sniff)
+        handler = FormatHandler(
+            kind=kind,
+            extensions=tuple(extensions),
+            parser_cls=cls,
+            sniff=sniff,
+            basenames=tuple(basenames),
+        )
         # stash for collection by parsers/__init__.py
         cls._handler = handler  # type: ignore[attr-defined]
         return cls

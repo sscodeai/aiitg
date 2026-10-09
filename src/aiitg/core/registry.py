@@ -24,6 +24,7 @@ class FormatHandler:
     extensions: tuple[str, ...]
     parser_cls: type[Parser]
     sniff: Callable[[bytes], bool] | None = None
+    basenames: tuple[str, ...] = ()  # exact, lowercased file names (e.g. ".cursorrules")
 
 
 class FormatRegistry:
@@ -32,20 +33,29 @@ class FormatRegistry:
     def __init__(self) -> None:
         self._handlers: dict[str, FormatHandler] = {}
         self._sniffers: list[FormatHandler] = []
+        self._basenames: dict[str, FormatHandler] = {}
 
     def register(self, handler: FormatHandler) -> None:
         for ext in handler.extensions:
-            self._handlers[ext.lower()] = handler
+            # Keys are dotless (``py``), matching ``Path.suffix.lstrip(".")``; accept
+            # either spelling from callers so a dotted registration cannot silently
+            # create an unreachable handler.
+            self._handlers[ext.lower().lstrip(".")] = handler
+        for name in handler.basenames:
+            self._basenames[name.lower()] = handler
         if handler.sniff is not None:
             self._sniffers.append(handler)
 
     def detect(self, path: str | Path) -> FormatHandler | None:
-        """Detect format by extension, falling back to content sniffing."""
+        """Detect format by extension, then exact file name, then content sniffing."""
         p = Path(path)
         ext = p.suffix.lower().lstrip(".")
         handler = self._handlers.get(ext)
         if handler is not None:
             return handler
+        by_name = self._basenames.get(p.name.lower())
+        if by_name is not None:
+            return by_name
         # sniff fallback: try to read the first bytes and ask each sniffer
         try:
             head = p.read_bytes()[:4096]
