@@ -20,7 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import StrEnum
 
-from aiitg.core.evidence import Evidence, ScanReport, Severity
+from aiitg.core.evidence import Evidence, ScanReport, Severity, severity_at_least
 
 # weights per severity for structure dimension
 _STRUCT_WEIGHT = {
@@ -34,7 +34,20 @@ _STRUCT_WEIGHT = {
 # detector IDs that signal deliberate concealment (structure)
 _STRUCT_DETECTORS = {"DET-001", "DET-002", "DET-003", "DET-004", "DET-005", "DET-006"}
 # detector IDs that signal manipulation intent (content)
-_CONTENT_DETECTORS = {"DET-007"}
+_CONTENT_DETECTORS = {"DET-007", "DET-008"}
+
+#: DET-008 (a directed unsafe instruction in a comment) is not concealment: a human
+#: reads it too. It is worse than concealment in one respect — the model *complies*
+#: (arXiv:2610.05139 measures 77.4–92.3% vulnerable completions), so it may never be
+#: scored "safe".
+_DIRECTIVE_DETECTOR = "DET-008"
+_CONTENT_WEIGHT = {
+    Severity.CRITICAL: 1.0,
+    Severity.HIGH: 0.8,
+    Severity.MEDIUM: 0.5,
+    Severity.LOW: 0.25,
+    Severity.INFO: 0.1,
+}
 
 # keywords that suggest instruction-like payloads (in metadata or hidden text)
 _INSTRUCTION_HINTS = (
@@ -100,6 +113,13 @@ def _content_score(evidence: list[Evidence], doc_text: str = "") -> tuple[float,
             penalty += 0.4
             reasons.append("suspicious keywords in metadata")
 
+    # code-comment directives (DET-008), weighted by severity
+    for ev in evidence:
+        if ev.detector_id == _DIRECTIVE_DETECTOR:
+            penalty += _CONTENT_WEIGHT.get(ev.severity, 0.2)
+            klass = ev.raw.get("class", "unknown")
+            reasons.append(f"code-comment directive ({klass}, {ev.severity.value})")
+
     # scan the raw text for instruction-like phrasing near hidden content
     lower = doc_text.lower()
     for hint in _INSTRUCTION_HINTS:
@@ -152,6 +172,14 @@ def compute_trust_label(report: ScanReport, doc_text: str = "") -> TrustLabel:
             score = min(score, 0.39)  # never above dangerous threshold (0.4)
         else:
             score = min(score, 0.6)  # never above caution threshold
+
+    # Same conservative cap for a directed unsafe comment: an instruction the model
+    # would follow must never read as "safe", whether or not anything was hidden.
+    if any(
+        ev.detector_id == _DIRECTIVE_DETECTOR and severity_at_least(ev.severity, Severity.HIGH)
+        for ev in report.evidence
+    ):
+        score = min(score, 0.39)
 
     if score >= 0.7:
         value = TrustLabelValue.SAFE
