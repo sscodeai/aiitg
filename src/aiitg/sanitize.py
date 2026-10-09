@@ -20,6 +20,15 @@ from dataclasses import dataclass, field
 
 from aiitg.core.document import ParsedDocument, TextParagraph
 from aiitg.core.evidence import Evidence, Severity
+from aiitg.parsers.text_parser import COMMENT_PREFIXES
+
+#: DET-008 findings carry a coordinate (line) whose *visible* text has to be
+#: neutralized. Stripping invisible characters is not enough here: the payload is plain
+#: text a human can read, and the point of quarantine is that the model must not read
+#: it as an instruction.
+DIRECTIVE_DETECTOR = "DET-008"
+_DEFUSE_MARKER = "[aiitg] removed untrusted instruction"
+_REDACT_MARKER = "[REDACTED: untrusted code-comment directive]"
 
 # Character classes that should never reach an LLM context
 INVISIBLE_RE = re.compile(
@@ -64,6 +73,28 @@ def sanitize_paragraph(para: TextParagraph, mode: str = "strip") -> str:
     return text
 
 
+def _line_comment_prefix(line: str, lang: str | None) -> str:
+    """The comment prefix a defused replacement should keep for this line."""
+    stripped = line.lstrip()
+    for prefix in COMMENT_PREFIXES.get(lang or "", ()):
+        if stripped.lower().startswith(prefix):
+            return prefix
+    return ""
+
+
+def defuse_comment_line(line: str, *, lang: str | None, klass: str, mode: str = "strip") -> str:
+    """Replace a directive comment with an inert, self-describing one.
+
+    The replacement stays a comment in the same language, keeping the line's
+    indentation, so the file keeps its shape (and its syntax); what disappears is the
+    instruction.
+    """
+    indent = line[: len(line) - len(line.lstrip())]
+    prefix = _line_comment_prefix(line, lang)
+    marker = _REDACT_MARKER if mode == "redact" else f"{_DEFUSE_MARKER} (class={klass})"
+    return f"{indent}{prefix} {marker}".rstrip()
+
+
 class Sanitizer:
     """Strip/redact hidden content from a parsed document."""
 
@@ -87,8 +118,12 @@ class Sanitizer:
         hidden_paragraphs: set[int] = set()
         hidden_sheets: set[str] = set()
         hidden_runs: set[tuple[int, int]] = set()
+        directive_lines: dict[int, str] = {}
         for ev in evidence:
             loc = ev.location
+            if ev.detector_id == DIRECTIVE_DETECTOR and loc.paragraph is not None:
+                directive_lines[loc.paragraph] = str(ev.raw.get("class", "unknown"))
+                continue
             if loc.paragraph is not None:
                 # hidden sheet row/col → the whole paragraph is hidden
                 if ev.detector_id == "DET-004":
@@ -103,7 +138,16 @@ class Sanitizer:
 
         removed: list[dict] = []
         out_lines: list[str] = []
+        lang = doc.metadata.get("lang")
         for para in doc.paragraphs:
+            # defuse an instruction-bearing comment before anything else looks at it
+            if para.index is not None and para.index in directive_lines:
+                klass = directive_lines[para.index]
+                out_lines.append(defuse_comment_line(para.text, lang=lang, klass=klass, mode=self.mode))
+                removed.append(
+                    {"type": "comment_directive", "location": para.index, "reason": f"unsafe instruction ({klass})"}
+                )
+                continue
             # skip paragraphs in hidden sheets
             sheet_name = para.raw.get("sheet")
             if sheet_name in hidden_sheets:
