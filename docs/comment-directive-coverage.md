@@ -81,10 +81,12 @@ The file stays valid Python and the model reads data instead of an order. The re
 `copilot-instructions.md`) — `.cursorrules` has no extension for the registry to key on, so
 `FormatHandler.basenames` was added alongside `FormatRegistry` extension dispatch.
 
-Plain prose that is *not* a rule file is still not enforced by default: `README.md` is parseable on
-demand (`aiitg scan README.md`) but reading every `.md` would scan the whole documentation tree on
-every tool call. Rule files are where an agent takes instructions from, so they are the ones the hook
-guards.
+Plain prose that is *not* a rule file is still not enforced: reading every `.md` would scan the whole
+documentation tree on every tool call, and rule files are where an agent takes instructions from.
+`.md`/`.txt`/`.rst` are therefore **not registered as extensions at all** — an unregistered extension
+has to keep flowing through content sniffing, because the hook enforces on the *sniffed* format for
+unenforced extensions (`payload.txt` holding a docx is blocked, upstream hardening from PR #1). Only
+source/config extensions are registered, plus the rule-file names above.
 
 ## 5. Measured, and the boundaries that come with it
 

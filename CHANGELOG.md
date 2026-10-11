@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] — 2026-09-20
+
+Fixes merged from `main` (PR #1, `fix/dev-review-findings`) that this branch now builds on:
+
+- Fail closed on incomplete scans: a detector that raises marks the scan `status: "error"` (with
+  `warnings`) instead of reporting a partially-scanned document as clean.
+- Hook hardening: the decision cache keys on content, not just `(path, mtime_ns, size)`; the wiring
+  check only accepts a `PreToolUse` hook whose matcher is `Read`; an unenforced extension whose
+  *content* sniffs to a document format is enforced.
+- Sanitization preserves visible content when a hidden sheet row/column is removed.
+- Advertised test count corrected.
+
 ## [0.3.0] — 2026-10-09
 
 Code-context coverage: the gate now reads source files and agent rule files, not just documents.
@@ -38,6 +50,13 @@ Code-context coverage: the gate now reads source files and agent rule files, not
 
 - The hook's block message said the file's "hidden content" never reached the model; a comment
   directive is visible to a human reader too, so the wording is now format-agnostic.
+- **Extension/sniff precedence.** Registering `.txt`/`.md` for the text parser shadowed the registry's
+  content sniffing, which would have let a document wearing a misleading extension through the hook's
+  sniff guard (`payload.txt` holding a docx would have been read as text and allowed). Caught while
+  merging `main` into `dev`; prose extensions are no longer registered, and the guard now combines the
+  rule-file name bypass with the sniffed-kind check (`DOCUMENT_KINDS`).
+- `evil.txt` carrying a document is enforced again after that merge — pinned by
+  `tests/unit/test_text_parser.py` and the upstream regression test.
 
 ## [0.2.0] — 2026-09-11
 
