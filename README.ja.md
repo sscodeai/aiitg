@@ -55,7 +55,7 @@ Untrusted input (docx/xlsx/xls/pdf/html/pptx)
 │  FormatRegistry → parser → ParsedDocument      │
 │  (format-agnostic intermediate model)          │
 │                                               │
-│  Detector chain (7 detectors)                 │
+│  Detector chain (8 detectors)                 │
 │  → Evidence list (coordinate-level)           │
 │                                               │
 │  Sanitizer (strip / redact)                   │
@@ -75,7 +75,7 @@ Untrusted input (docx/xlsx/xls/pdf/html/pptx)
 
 | 段階 | 機能 | インターフェース |
 |---|---|---|
-| **M0** | 隠しコンテンツ監査。6 形式 × 7 検出器 → 座標レベルの JSON 証拠 | `aiitg scan` |
+| **M0** | 隠しコンテンツ監査。6 文書形式 × 7 検出器 → 座標レベルの JSON 証拠 | `aiitg scan` |
 | **M1** | サニタイズ（strip/redact）+ 信頼ラベル（safe/caution/dangerous） | `aiitg sanitize`, `aiitg trust` |
 | **M2** | ポリシー適用（allow/quarantine/human_approval/block）+ 監査 + 人間承認キュー + エージェント向け **MCP server** | `aiitg policy`, `aiitg audit`, `aiitg approvals`, `aiitg-mcp` |
 | **M3** | ゼロタッチ導入。Claude Code の `PreToolUse` フックで、信頼できないコンテンツがモデルのコンテキストに入る前にポリシーを強制（fail-closed・キャッシュ・監査ログ付き） | `aiitg hook pretooluse`, `aiitg hook-config` |
