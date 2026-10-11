@@ -29,6 +29,10 @@ In scope — anything that breaks the project's promises:
   overrides a real verdict).
 - **Detection bypass**: a concealment technique that a human reader cannot see but aiitg reports as
   `safe` with no evidence, or a sanitized output that still carries the hidden payload.
+- **Directive bypass**: an instruction planted in a code comment or an agent rule file that reaches
+  the model without a `DET-008` finding, or a sanitized substitute that still carries it. This is not
+  *concealment* — a human reads the comment too — but it breaks the same promise through a different
+  channel, so it is in scope.
 - **Policy bypass**: reaching `allow` for a document the default policy would block/quarantine, or a
   `human_approval` decision that proceeds without a human.
 - **Crash-to-allow**: any exception path that results in the document being consumed anyway.

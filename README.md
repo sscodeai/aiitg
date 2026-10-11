@@ -55,7 +55,7 @@ Untrusted input (docx/xlsx/xls/pdf/html/pptx)
 │  FormatRegistry → parser → ParsedDocument      │
 │  (format-agnostic intermediate model)          │
 │                                               │
-│  Detector chain (7 detectors)                 │
+│  Detector chain (8 detectors)                 │
 │  → Evidence list (coordinate-level)           │
 │                                               │
 │  Sanitizer (strip / redact)                   │
@@ -75,7 +75,7 @@ Untrusted input (docx/xlsx/xls/pdf/html/pptx)
 
 | Stage | Capability | Interface |
 |---|---|---|
-| **M0** | Hidden content audit — 6 formats × 7 detectors → coordinate-level JSON evidence | `aiitg scan` |
+| **M0** | Hidden content audit — 6 document formats × 7 detectors → coordinate-level JSON evidence | `aiitg scan` |
 | **M1** | Sanitization (strip/redact) + trust labeling (safe/caution/dangerous) | `aiitg sanitize`, `aiitg trust` |
 | **M2** | Policy enforcement (allow/quarantine/human_approval/block) + audit + human-approval queue + **MCP server** for agent frameworks | `aiitg policy`, `aiitg audit`, `aiitg approvals`, `aiitg-mcp` |
 | **M3** | Zero-touch adoption — a Claude Code `PreToolUse` hook that enforces policy before untrusted content enters the model context (fail-closed, cached, audited) | `aiitg hook pretooluse`, `aiitg hook-config` |
@@ -180,7 +180,7 @@ aiitg scan report.docx --format json        # JSON evidence report
 aiitg scan report.xlsx --min-severity high  # only high+ findings
 aiitg scan report.pdf --format rich         # terminal table
 aiitg scan ./inbox --recursive --jsonl      # batch directory scan, one compact JSON object per line
-aiitg list-detectors                        # list all 7 detectors
+aiitg list-detectors                        # list all 8 detectors
 ```
 
 Exit codes: `0` = clean · `1` = findings at/above threshold · `2` = usage error · `3` = parse error (CI-friendly).
