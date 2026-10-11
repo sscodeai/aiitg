@@ -67,10 +67,22 @@ class TestRegistryDispatch:
         assert registry.detect(tmp_path / "a.py") is not None
         assert registry.detect(tmp_path / "a.zzz") is None
 
-    def test_python_is_parseable_and_prose_is_parseable(self):
+    def test_python_is_parseable_by_extension(self):
+        assert default_format_registry().detect("x.py") is not None
+
+    def test_prose_extensions_are_left_to_content_sniffing(self):
+        # Registering `txt`/`md` would shadow the sniff path and let a document wearing a
+        # misleading extension through the hook's guard, so prose is not registered.
         registry = default_format_registry()
-        assert registry.detect("x.py") is not None
-        assert registry.detect("README.md") is not None
+        assert registry.detect("README.md") is None
+        assert registry.detect("notes.txt") is None
+
+    def test_document_disguised_as_prose_sniffs_to_its_real_format(self, tmp_path):
+        from tests.fixtures import builders
+
+        f = builders.build_docx_with_zerowidth(tmp_path / "payload.txt")
+        handler = default_format_registry().detect(f)
+        assert handler is not None and handler.kind == "docx"
 
     def test_rule_file_names_are_the_documented_set(self):
         assert ".cursorrules" in RULE_FILE_NAMES

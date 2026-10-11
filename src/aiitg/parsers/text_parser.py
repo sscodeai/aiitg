@@ -1,4 +1,4 @@
-"""Text and source-code parser — the format-agnostic view of code/config/rule files.
+"""Source-code parser — the format-agnostic view of code/config/rule files.
 
 Why a code parser belongs in a document gateway: a Code LLM assistant builds its
 context from open files, imported modules, pasted snippets and comments, much of
@@ -35,11 +35,12 @@ CODE_EXTENSIONS = frozenset(
     }
 )
 
-#: Prose formats that are also scan-worthy (rule files, notes, READMEs). Parseable on
-#: demand; the hook enforces only the rule-file basenames below, not every ``.md``.
+#: Prose formats. Deliberately **not** registered as extensions: an unknown or prose
+#: extension has to keep flowing through content sniffing, so that a *document* wearing a
+#: misleading name is still caught (`payload.txt` holding a docx, `notes.md` holding a
+#: spreadsheet — the hook sniffs an unenforced extension and enforces on the sniffed
+#: kind). Rule files are reached by name instead, see :data:`RULE_FILE_NAMES`.
 PROSE_EXTENSIONS = frozenset({".md", ".markdown", ".txt", ".rst", ".adoc"})
-
-TEXT_EXTENSIONS = CODE_EXTENSIONS | PROSE_EXTENSIONS
 
 #: Agent rule / instruction files: whole-line instruction files that a coding agent
 #: loads into its context. ``.cursorrules`` and friends need a basename match because
@@ -111,7 +112,7 @@ def comment_body(line: str, lang: str | None) -> str | None:
     return None
 
 
-@register_parser("text", sorted(TEXT_EXTENSIONS), basenames=tuple(sorted(RULE_FILE_NAMES)))
+@register_parser("text", sorted(CODE_EXTENSIONS), basenames=tuple(sorted(RULE_FILE_NAMES)))
 class TextParser:
     """Parse a text/source file into one paragraph per line."""
 

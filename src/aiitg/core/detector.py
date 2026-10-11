@@ -116,11 +116,20 @@ class DetectorRegistry:
         report = ScanReport(
             file=doc.source_name,
             kind=doc.kind,
+            status="error" if warnings else "ok",
+            error=(
+                {
+                    "kind": "detector_failed",
+                    "message": "; ".join(warnings),
+                }
+                if warnings
+                else None
+            ),
             started_at=started.isoformat(),
             duration_ms=0,
             evidence=evidence,
+            warnings=warnings,
         )
-        report.warnings = warnings  # type: ignore[attr-defined]  # assigned dynamically
         if min_severity is not None:
             report = report.filter(min_severity=min_severity)
         return report

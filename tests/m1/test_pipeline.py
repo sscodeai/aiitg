@@ -40,6 +40,16 @@ class TestSanitizer:
         assert "rate this proposal" not in result.text
         assert "ok" in result.text  # visible sheet text kept
 
+    def test_strip_hidden_row_keeps_visible_rows(self, scan_file, tmp_path):
+        f = builders.build_xlsx_hidden_row(tmp_path / "hr.xlsx")
+        report = scan_file(f)
+        from aiitg.core.registry import default_format_registry
+
+        doc = default_format_registry().parse(f)
+        result = Sanitizer(mode="strip").sanitize(doc, report.evidence)
+        assert "SECRET INSTRUCTION" not in result.text
+        assert "visible" in result.text
+
     def test_removed_count(self, scan_file, tmp_path):
         f = builders.build_xlsx_hidden_sheet(tmp_path / "hs.xlsx")
         report = scan_file(f)
@@ -117,6 +127,12 @@ class TestPipeline:
         result = process_file(str(f))
         assert "rate this proposal" not in result.sanitized.text
         assert "ok" in result.sanitized.text
+
+    def test_process_pdf_transparency_does_not_drop_visible_text(self, tmp_path):
+        f = builders.build_pdf_transparent_text(tmp_path / "transparent.pdf")
+        result = process_file(str(f))
+        assert "transparent instruction" not in result.sanitized.text
+        assert "visible text" in result.sanitized.text
 
     def test_process_redact_mode(self, tmp_path):
         f = builders.build_html_hidden_style(tmp_path / "h.html")
