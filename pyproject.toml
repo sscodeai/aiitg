@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "aiitg"
-version = "0.2.0"
+version = "0.3.0"
 description = "AI Input Trust Gateway — hidden content auditor for documents fed to LLMs/Agents"
 readme = "README.md"
 requires-python = ">=3.11"

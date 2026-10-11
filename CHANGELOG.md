@@ -4,6 +4,60 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] — 2026-09-20
+
+Fixes merged from `main` (PR #1, `fix/dev-review-findings`) that this branch now builds on:
+
+- Fail closed on incomplete scans: a detector that raises marks the scan `status: "error"` (with
+  `warnings`) instead of reporting a partially-scanned document as clean.
+- Hook hardening: the decision cache keys on content, not just `(path, mtime_ns, size)`; the wiring
+  check only accepts a `PreToolUse` hook whose matcher is `Read`; an unenforced extension whose
+  *content* sniffs to a document format is enforced.
+- Sanitization preserves visible content when a hidden sheet row/column is removed.
+- Advertised test count corrected.
+
+## [0.3.0] — 2026-10-09
+
+Code-context coverage: the gate now reads source files and agent rule files, not just documents.
+
+### Added
+
+- **`text` parser** (`src/aiitg/parsers/text_parser.py`): one paragraph per line with a 1-based line
+  number for source, config and prose files, carrying the language's comment-syntax family. The format
+  registry gained `FormatHandler.basenames` so extensionless rule files (`.cursorrules`) resolve by
+  name, and extension keys are normalised (a dotted registration can no longer create an unreachable
+  handler).
+- **DET-008 `comment_directive`** (`src/aiitg/detectors/text/comment_directive.py`): detects an unsafe
+  instruction written as an ordinary comment or in a rule file — the inference-time context-injection
+  channel of [arXiv:2610.05139](https://arxiv.org/abs/2610.05139). A hit needs a directive frame
+  (marker / addressed / imperative / authority / safety-negation) **and** an insecure objective from
+  the paper's ten weakness classes; descriptive prose, prohibitions and fix-notes are not reported.
+- **Defusing on quarantine** (`defuse_comment_line`): the sanitized substitute replaces the directive
+  with an inert comment, keeping the language's syntax and the line's indentation, so "quarantine" is
+  not a no-op for code files. The removal is recorded in `SanitizeResult.removed`.
+- **Hook enforcement** for source/config extensions and agent rule files (`AGENTS.md`, `CLAUDE.md`,
+  `GEMINI.md`, `.cursorrules`, `.windsurfrules`, `copilot-instructions.md`); `aiitg hook doctor` reports
+  the enforced set.
+- **Trust labeling**: a HIGH/CRITICAL comment directive caps the score below the `dangerous` threshold
+  (an instruction the model would follow may never read as `safe`), earning its own content-dimension
+  weight.
+- **Documentation**: `docs/comment-directive-coverage.md` (design, measurements, boundaries);
+  README/README.ja sections for the new surface.
+- **Tests** (+98): the paper's attack corpus (32 payloads, two verbatim), a 46-comment benign corpus
+  across five comment syntax families, parser/registry, defusing, hook enforcement and CLI e2e.
+
+### Fixed
+
+- The hook's block message said the file's "hidden content" never reached the model; a comment
+  directive is visible to a human reader too, so the wording is now format-agnostic.
+- **Extension/sniff precedence.** Registering `.txt`/`.md` for the text parser shadowed the registry's
+  content sniffing, which would have let a document wearing a misleading extension through the hook's
+  sniff guard (`payload.txt` holding a docx would have been read as text and allowed). Caught while
+  merging `main` into `dev`; prose extensions are no longer registered, and the guard now combines the
+  rule-file name bypass with the sniffed-kind check (`DOCUMENT_KINDS`).
+- `evil.txt` carrying a document is enforced again after that merge — pinned by
+  `tests/unit/test_text_parser.py` and the upstream regression test.
+
 ## [0.2.0] — 2026-09-11
 
 Zero-touch adoption: enforcement for tools that never call the MCP server.

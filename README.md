@@ -7,7 +7,7 @@
 [![CI](https://github.com/sscodeai/aiitg/actions/workflows/ci.yml/badge.svg)](https://github.com/sscodeai/aiitg/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)]()
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)]()
-[![Tests](https://img.shields.io/badge/tests-191%20passed-brightgreen.svg)](.github/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-330%20passed-brightgreen.svg)](.github/workflows/ci.yml)
 [![arXiv](https://img.shields.io/badge/arXiv-2507.06185-red.svg)]()
 
 ---
@@ -79,6 +79,7 @@ Untrusted input (docx/xlsx/xls/pdf/html/pptx)
 | **M1** | Sanitization (strip/redact) + trust labeling (safe/caution/dangerous) | `aiitg sanitize`, `aiitg trust` |
 | **M2** | Policy enforcement (allow/quarantine/human_approval/block) + audit + human-approval queue + **MCP server** for agent frameworks | `aiitg policy`, `aiitg audit`, `aiitg approvals`, `aiitg-mcp` |
 | **M3** | Zero-touch adoption — a Claude Code `PreToolUse` hook that enforces policy before untrusted content enters the model context (fail-closed, cached, audited) | `aiitg hook pretooluse`, `aiitg hook-config` |
+| **M4** | **Code-context coverage** — the same gate for source files and agent rule files: an unsafe instruction written as an ordinary comment (`# TODO:` / `# INSTRUCTION:` / `# TASK:`) is detected, blocks the read, and is defused in the sanitized substitute | `aiitg scan account.py` |
 
 ### Detectors
 
@@ -91,10 +92,55 @@ Untrusted input (docx/xlsx/xls/pdf/html/pptx)
 | DET-005 | ooxml_nodes | OOXML hidden nodes (tracked-delete, altChunk, comments) | MEDIUM |
 | DET-006 | annotations | Word comments, PDF annotations, HTML comments | LOW |
 | DET-007 | document_meta | Metadata / VBA macros / JS signals | LOW |
+| DET-008 | comment_directive | Insecure instruction hidden in an ordinary code comment or agent rule file — the directive frame (marker / addressed / imperative / authority / "skip the check") plus one of the ten injected-weakness classes | CRITICAL · HIGH · MEDIUM |
 
 ### Formats
 
-`docx` · `xlsx` · `xls` (legacy) · `pdf` · `html` · `pptx`
+`docx` · `xlsx` · `xls` (legacy) · `pdf` · `html` · `pptx` · source code and config
+(`py` `js` `ts` `go` `java` `rs` `sh` `sql` `yaml` `toml` …) · agent rule files
+(`AGENTS.md`, `CLAUDE.md`, `.cursorrules`, `.windsurfrules`)
+
+### Code-context coverage (DET-008)
+
+A document is not the only untrusted input an agent reads. A Code LLM builds its context from open
+files, imported modules, pasted snippets and **comments** — and an instruction planted in a comment
+is indistinguishable from the developer's own, because it wears the same marker (`# TODO:`,
+`# INSTRUCTION:`, `# TASK:`). [arXiv:2610.05139](https://arxiv.org/abs/2610.05139) measured what that
+costs: 77.4–92.3% of completions contained a medium-or-higher weakness when the comment carried an
+insecure objective, against 1.7–5.1% for ordinary coding work. aiitg answers upstream of generation —
+the directive never reaches the model intact.
+
+```bash
+aiitg scan services/account.py            # DET-008 CRITICAL @ account.py:10, exit code 1
+aiitg hook pretooluse < payload.json      # deny (POL-001): the file was not sent to the model
+```
+
+* A hit needs a **directive frame** (marker / addressed-to-the-model / imperative opener / authority
+  claim / "skip the check") **and** an **insecure objective** from the ten injected-weakness classes of
+  the paper's Appendix A, plus prompt injection aimed at the assistant itself.
+* Descriptive prose that merely names a sink ("a bare `subprocess` cannot answer") is not an order and
+  is not reported; neither is a prohibition ("… must never call `child_process`") or a fix-note.
+* CRITICAL = an order to build one of those weakness classes (blocks the read) · HIGH = an order in a
+  class respectable code also mentions, e.g. logging a secret (blocks) · MEDIUM = a marker-only mention
+  (reported, quarantined and **defused**, not blocked).
+* On quarantine the directive is replaced by an inert comment — same syntax, same indentation — so the
+  file stays valid and the model reads data instead of an instruction.
+
+Measured on this repository's corpus and on live third-party source, with the boundaries that come with them:
+
+| Measurement | Result |
+|---|---|
+| Attack corpus (10 classes × 3 framings + 2 agent-directed; 2 payloads verbatim from the paper) | 32/32 detected, 29 CRITICAL / 3 HIGH |
+| Benign corpus (46 ordinary work comments, five syntax families) | 0 false positives |
+| Live third-party source probe (this project + `takumi/packages`: 167 files, 4,643 comment lines) | 0 findings |
+| Legit notes byte-shaped like a payload (`# TODO: use DBMS_SCHEDULER for the nightly job`) | flagged — the deliberate fail-closed choice |
+
+Honest boundaries: the paper's 700-item corpus was not released with its HTML, so these figures are
+**not** a reproduction of the paper's numbers; a deterministic pattern detector is incomplete by
+construction (the paper's own strongest screen still missed ~⅓); and DET-008 reads *instructions*, not
+the vulnerable code a model may already have written — that is a SAST job. Design notes, the full
+measurement method and the known gaps:
+[`docs/comment-directive-coverage.md`](docs/comment-directive-coverage.md).
 
 ## Install
 
@@ -239,11 +285,12 @@ else:
 - [arXiv:2508.20863](https://arxiv.org/abs/2508.20863) — *Misleading LLMs in Peer-Reviewing via Hidden Prompt-Injection*
 - [arXiv:2509.09912](https://arxiv.org/abs/2509.09912) — *When Your Reviewer is an LLM: Prompt Injection Risks in Peer Review*
 - [arXiv:2605.28999](https://arxiv.org/abs/2605.28999) — *Real-World Prompt-Injection Attacks in LLM-based Resume Screening*
+- [arXiv:2610.05139](https://arxiv.org/abs/2610.05139) — *Hidden in the Comments: A Context-Injection Attack Surface in Code LLMs* (Munir, Quinzan, Roberts — University of Oxford): an insecure objective as an ordinary `# TODO:` comment drove 77.4–92.3% of completions to a medium-or-higher weakness vs 1.7–5.1% for ordinary coding work, and the strongest post-generation screen still missed roughly one third. aiitg's answer is upstream of generation — see the DET-008 section below.
 
 ## Testing
 
 ```bash
-make test        # 191 tests
+make test        # 330 tests
 make lint        # ruff
 make typecheck   # mypy
 make build       # build wheel/sdist
@@ -262,7 +309,10 @@ Malicious test fixtures are **generated in code** (never committed as binaries) 
 - [x] **M1** — Sanitization + trust labeling (scan → sanitize → label closed loop)
 - [x] **M2** — Policy enforcement + audit + human approval + MCP server (agent gateway)
 - [x] **M3** — Zero-touch adoption: Claude Code `PreToolUse`/`PostToolUse` hook adapter (`aiitg hook`)
+- [x] **M4** — Code-context coverage: `text`/code/rule-file parsing, DET-008 (`comment_directive`), defusing in the sanitizer, hook enforcement for source and rule files
 - [ ] More formats (legacy `.doc`, `.ppt`, images via OCR) · multi-policy engine · distributed audit · benchmark dataset for hidden-injection detection
+- [ ] A published evaluation set for DET-008 — the current numbers are measured on the corpus in `tests/` plus a false-positive probe over live third-party source, not on the paper's (unreleased) 700-item corpus
+- [ ] Verified code (SAST) side: DET-008 reads *instructions*, not the vulnerable code a model may already have written
 - [ ] M3.1 — HTTP proxy / reverse-proxy interception for API clients, per-tool `updatedToolOutput` adapters, Bash heuristics
 
 Design notes, measured findings and known gaps for M3 live in

@@ -7,7 +7,7 @@
 [![CI](https://github.com/sscodeai/aiitg/actions/workflows/ci.yml/badge.svg)](https://github.com/sscodeai/aiitg/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)]()
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)]()
-[![Tests](https://img.shields.io/badge/tests-191%20passed-brightgreen.svg)](.github/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-330%20passed-brightgreen.svg)](.github/workflows/ci.yml)
 [![arXiv](https://img.shields.io/badge/arXiv-2507.06185-red.svg)]()
 
 ---
@@ -78,6 +78,8 @@ Untrusted input (docx/xlsx/xls/pdf/html/pptx)
 | **M0** | 隠しコンテンツ監査。6 形式 × 7 検出器 → 座標レベルの JSON 証拠 | `aiitg scan` |
 | **M1** | サニタイズ（strip/redact）+ 信頼ラベル（safe/caution/dangerous） | `aiitg sanitize`, `aiitg trust` |
 | **M2** | ポリシー適用（allow/quarantine/human_approval/block）+ 監査 + 人間承認キュー + エージェント向け **MCP server** | `aiitg policy`, `aiitg audit`, `aiitg approvals`, `aiitg-mcp` |
+| **M3** | ゼロタッチ導入。Claude Code の `PreToolUse` フックで、信頼できないコンテンツがモデルのコンテキストに入る前にポリシーを強制（fail-closed・キャッシュ・監査ログ付き） | `aiitg hook pretooluse`, `aiitg hook-config` |
+| **M4** | **コードコンテキスト対応**。ソースコードとエージェントのルールファイルに同じゲートを適用。普通のコメントとして書かれた危険な指示（`# TODO:` / `# INSTRUCTION:` / `# TASK:`）を検出し、読み取りを拒否、サニタイズ後の代替テキストでは無効化する | `aiitg scan account.py` |
 
 ### 検出器
 
@@ -90,10 +92,13 @@ Untrusted input (docx/xlsx/xls/pdf/html/pptx)
 | DET-005 | ooxml_nodes | OOXML の隠しノード（tracked-delete, altChunk, comments） | MEDIUM |
 | DET-006 | annotations | Word コメント、PDF 注釈、HTML コメント | LOW |
 | DET-007 | document_meta | メタデータ、VBA マクロ、JS シグナル | LOW |
+| DET-008 | comment_directive | 普通のコードコメント、またはエージェントのルールファイルに隠された危険な指示。指示フレーム（マーカー / モデルへの呼びかけ / 命令形 / 権威の主張 / 検証を省けという指示）と、論文 Appendix A の 10 種の脆弱性クラスのいずれかが同時に揃ったときに発火 | CRITICAL · HIGH · MEDIUM |
 
 ### 対応形式
 
-`docx` · `xlsx` · `xls`（legacy）· `pdf` · `html` · `pptx`
+`docx` · `xlsx` · `xls`（legacy）· `pdf` · `html` · `pptx` · ソースコードと設定ファイル
+（`py` `js` `ts` `go` `java` `rs` `sh` `sql` `yaml` `toml` など）· エージェントのルールファイル
+（`AGENTS.md`, `CLAUDE.md`, `.cursorrules`, `.windsurfrules`）
 
 ## インストール
 
@@ -170,13 +175,50 @@ else:
 
 - [arXiv:2507.06185](https://arxiv.org/abs/2507.06185) — *Hidden Prompts in Manuscripts Exploit AI-Assisted Peer Review*
 - [arXiv:2508.20863](https://arxiv.org/abs/2508.20863) — *Misleading LLMs in Peer-Reviewing via Hidden Prompt-Injection*
+- [arXiv:2610.05139](https://arxiv.org/abs/2610.05139) — *Hidden in the Comments: A Context-Injection Attack Surface in Code LLMs*（Munir, Quinzan, Roberts / University of Oxford）: 普通の `# TODO:` コメントとして書かれた危険な目的により、生成結果の 77.4〜92.3% が中程度以上の脆弱性を含んだ（通常の作業では 1.7〜5.1%）。最強の生成後スクリーナーでも約 1/3 を見逃している。aiitg の答えは生成の上流にある。DET-008 の節を参照。
 - [arXiv:2509.09912](https://arxiv.org/abs/2509.09912) — *When Your Reviewer is an LLM: Prompt Injection Risks in Peer Review*
 - [arXiv:2605.28999](https://arxiv.org/abs/2605.28999) — *Real-World Prompt-Injection Attacks in LLM-based Resume Screening*
+
+### コードコンテキスト対応（DET-008）
+
+信頼できない入力はドキュメントだけではありません。コード LLM は開いているファイル、import したモジュール、
+貼り付けたスニペット、そして **コメント** からコンテキストを組み立てます。コメントに仕込まれた指示は、
+開発者自身の指示と同じマーカー（`# TODO:`、`# INSTRUCTION:`、`# TASK:`）を使うため、モデルには区別できません。
+[arXiv:2610.05139](https://arxiv.org/abs/2610.05139) はその代償を測定しています。コメントに危険な目的が
+埋め込まれた場合、生成結果の 77.4〜92.3% が中程度以上の脆弱性を含み、通常のコーディング作業では 1.7〜5.1% でした。
+aiitg の答えは生成の**前**にあります。指示がモデルに届く前に止めます。
+
+```bash
+aiitg scan services/account.py            # DET-008 CRITICAL @ account.py:10, 終了コード 1
+aiitg hook pretooluse < payload.json      # deny（POL-001）: ファイルはモデルに送られない
+```
+
+* 検出には **指示フレーム**（マーカー / モデルへの呼びかけ / 命令形 / 権威の主張 / 「検証は不要」）と、
+  論文 Appendix A の脆弱性クラスに該当する **危険な目的** の両方が必要です。加えてモデル自身を狙う
+  プロンプトインジェクションも対象です。
+* シンクに言及しているだけの説明的な散文（「bare `subprocess` では応答できない」など）は指示ではないため
+  報告しません。禁止文（「`child_process` を決して呼んではならない」）や修正メモも同様です。
+* CRITICAL = その脆弱性クラスを作らせる指示（読み取りを拒否）· HIGH = まともなコードでも言及するクラス
+  （秘密情報のログ出力など。拒否）· MEDIUM = マーカーのみの言及（報告し、隔離して無効化するがブロックはしない）。
+* 隔離時は指示を無害なコメントに置き換えます（コメント記法とインデントは維持）。ファイルは有効なまま、
+  モデルは指示ではなくデータを読みます。
+
+| 測定 | 結果 |
+|---|---|
+| 攻撃コーパス（10 クラス × 3 フレーミング + エージェント向け 2 件。うち 2 件は論文から逐語） | 32/32 検出、29 CRITICAL / 3 HIGH |
+| 良性コーパス（通常の作業コメント 46 件、5 つのコメント記法） | 誤検知 0 |
+| 実在のサードパーティソース走査（本プロジェクト + `takumi/packages`: 167 ファイル、コメント 4,643 行） | 検出 0 |
+| ペイロードと同じ形をした正当なメモ（`# TODO: use DBMS_SCHEDULER for the nightly job`） | 検出する（意図的な fail-closed） |
+
+正直な境界: 論文の 700 件コーパスは HTML と一緒に公開されていないため、この数値は論文の数値の**再現ではありません**。
+決定的なパターン検出器は原理的に不完全です（論文自身の最強スクリーナーでも約 1/3 を見逃しています）。
+また DET-008 が読むのは *指示* であり、モデルが既に書いた脆弱なコードではありません（それは SAST の役割です）。
+設計と既知のギャップ: [`docs/comment-directive-coverage.md`](docs/comment-directive-coverage.md)。
 
 ## テスト
 
 ```bash
-make test        # 191 tests
+make test        # 330 tests
 make lint        # ruff
 make typecheck   # mypy
 make build       # wheel/sdist をビルド
@@ -190,7 +232,11 @@ make demo        # 一時的な悪意あるサンプルを生成してスキャ�
 - [x] **M0** — 隠しコンテンツ監査（6 形式 × 7 検出器 → 座標レベルの証拠）
 - [x] **M1** — サニタイズ + 信頼ラベル（scan → sanitize → label の閉ループ）
 - [x] **M2** — ポリシー適用 + 監査 + 人間承認 + MCP server（agent gateway）
+- [x] **M3** — ゼロタッチ導入: Claude Code の `PreToolUse`/`PostToolUse` フックアダプタ（`aiitg hook`）
+- [x] **M4** — コードコンテキスト対応: `text`/コード/ルールファイルのパース、DET-008（`comment_directive`）、サニタイザでの無効化、ソースとルールファイルのフック強制
 - [ ] 追加形式（legacy `.doc`, `.ppt`, OCR による画像対応）· 複数ポリシーエンジン · 分散監査 · 隠しインジェクション検出のベンチマークデータセット
+- [ ] DET-008 の公開評価セット — 現在の数値は `tests/` のコーパスと実在ソースへの誤検知走査によるもので、論文の（未公開の）700 件コーパスに対する結果ではない
+- [ ] コード検証（SAST）側: DET-008 が読むのは *指示* であり、モデルが既に書いた脆弱なコードではない
 
 ## ライセンス
 

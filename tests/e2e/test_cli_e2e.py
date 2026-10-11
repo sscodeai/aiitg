@@ -210,3 +210,42 @@ class TestCLIApprovals:
         r2 = runner.invoke(app, ["approvals", str(queue), "--action", "approve", "--id", entry["id"]])
         assert r2.exit_code == 0
         assert "Approved" in r2.output
+
+
+class TestCLIScanCode:
+    """DET-008 (inference-time context injection) through the real CLI."""
+
+    def test_python_payload_exit_1_and_json_kind_text(self, tmp_path):
+        f = builders.build_py_with_directive(tmp_path / "account.py")
+        result = _run_scan(f, "--format", "json")
+        assert result.exit_code == 1, result.output
+        payload = json.loads(result.output)
+        assert payload["scan"]["kind"] == "text"
+        assert payload["evidence"][0]["detector_id"] == "DET-008"
+        assert payload["evidence"][0]["raw"]["class"] == "mass_assignment"
+
+    def test_policy_on_a_python_payload_blocks(self, tmp_path):
+        f = builders.build_py_with_directive(tmp_path / "account.py")
+        result = runner.invoke(app, ["policy", str(f), "--format", "json"])
+        payload = json.loads(result.output)
+        assert payload["decision"]["action"] == "block"
+        assert payload["trust_label"]["value"] == "dangerous"
+
+    def test_benign_python_exit_0(self, tmp_path):
+        f = builders.build_py_benign(tmp_path / "ok.py")
+        assert _run_scan(f).exit_code == 0
+
+    def test_rule_file_without_extension_is_scanned(self, tmp_path):
+        f = builders.build_cursorrules_with_directive(tmp_path / ".cursorrules")
+        result = _run_scan(f, "--format", "json")
+        assert result.exit_code == 1, result.output
+        assert json.loads(result.output)["scan"]["kind"] == "text"
+
+    def test_directory_scan_finds_the_payload(self, tmp_path):
+        builders.build_py_with_directive(tmp_path / "account.py")
+        builders.build_py_benign(tmp_path / "ok.py")
+        result = runner.invoke(app, ["scan", str(tmp_path), "--recursive", "--jsonl"])
+        assert result.exit_code == 1, result.output
+        reports = [json.loads(line) for line in result.output.strip().splitlines()]
+        flagged = {r["scan"]["file"] for r in reports if r["summary"]["total"]}
+        assert flagged == {"account.py"}
