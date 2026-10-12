@@ -98,7 +98,7 @@ class TestCLIList:
     def test_list_detectors(self):
         result = runner.invoke(app, ["list-detectors"])
         assert result.exit_code == 0
-        for det_id in ("DET-001", "DET-002", "DET-003", "DET-004", "DET-005", "DET-006", "DET-007"):
+        for det_id in ("DET-001", "DET-002", "DET-003", "DET-004", "DET-005", "DET-006", "DET-007", "DET-008"):
             assert det_id in result.output
 
 

@@ -1,4 +1,5 @@
-"""AI Input Trust Gateway — hidden content auditor for documents fed to LLMs/Agents.
+"""AI Input Trust Gateway — zero-trust input layer for documents, source files and agent
+rule files fed to LLMs/Agents.
 
 Core principle: **External content is data, never authority.**
 

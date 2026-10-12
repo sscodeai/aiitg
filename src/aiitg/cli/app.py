@@ -21,7 +21,7 @@ from aiitg.reporters.rich_reporter import RichReporter
 
 app = typer.Typer(
     name="aiitg",
-    help="AI Input Trust Gateway — hidden content auditor for documents fed to LLMs/Agents.",
+    help="AI Input Trust Gateway — audit documents, source files and agent rule files before they reach an LLM/Agent.",
     add_completion=False,
 )
 app.add_typer(hook_app, name="hook")

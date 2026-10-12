@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "aiitg"
 version = "0.3.0"
-description = "AI Input Trust Gateway — hidden content auditor for documents fed to LLMs/Agents"
+description = "AI Input Trust Gateway — zero-trust input layer: audit documents, source files and agent rule files for hidden prompt-injection before they reach an LLM/Agent"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
