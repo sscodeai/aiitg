@@ -2,7 +2,7 @@
 
 [English](README.md) | [日本語](README.ja.md)
 
-**The zero-trust input security layer for AI agents.** Scan untrusted documents before they reach an LLM — detect hidden prompt-injection content, sanitize it, label its trustworthiness, and enforce policy. **External content is data, never authority.**
+**The zero-trust input security layer for AI agents.** Scan untrusted input — documents, source files and agent rule files — before it reaches an LLM: detect hidden prompt-injection, sanitize it, label its trustworthiness, and enforce policy. **External content is data, never authority.**
 
 [![CI](https://github.com/sscodeai/aiitg/actions/workflows/ci.yml/badge.svg)](https://github.com/sscodeai/aiitg/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)]()
@@ -36,6 +36,7 @@ That's also why the tool is deliberately named as a gateway, not a scanner: a sc
 - **Peer-review manipulation**: authors hide prompts in manuscripts to make AI reviewers give top scores ([arXiv:2507.06185](https://arxiv.org/abs/2507.06185), [2508.20863](https://arxiv.org/abs/2508.20863), [2509.09912](https://arxiv.org/abs/2509.09912))
 - **Resume injection**: hidden instructions in resumes force AI screeners to "must hire" ([arXiv:2605.28999](https://arxiv.org/abs/2605.28999))
 - **Agent hijacking**: hidden text in PDFs/web pages makes AI assistants leak secrets or execute dangerous actions
+- **Code-comment injection**: an insecure objective written as an ordinary `# TODO:` comment in a library the developer imports — the model complies because the marker is the same one real code uses ([arXiv:2610.05139](https://arxiv.org/abs/2610.05139); see DET-008 below)
 
 The document a human sees and the document an LLM reads can be **completely different** — that's the **Human-AI Visibility Gap**. This project turns that gap into auditable evidence.
 
