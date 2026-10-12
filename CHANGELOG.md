@@ -57,6 +57,9 @@ Code-context coverage: the gate now reads source files and agent rule files, not
   rule-file name bypass with the sniffed-kind check (`DOCUMENT_KINDS`).
 - `evil.txt` carrying a document is enforced again after that merge — pinned by
   `tests/unit/test_text_parser.py` and the upstream regression test.
+- **Scope wording**: the package description, CLI help, module docstring and README headline now say
+  what the gate actually reads (documents **and** source/rule files); the last stale 7-detector count
+  in `README.ja.md` is corrected, and the `list-detectors` e2e test now pins DET-008 as well.
 
 ## [0.2.0] — 2026-09-11
 

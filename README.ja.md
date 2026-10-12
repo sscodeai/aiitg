@@ -2,7 +2,7 @@
 
 [English](README.md) | [日本語](README.ja.md)
 
-**AI エージェントのためのゼロトラスト入力セキュリティ層。** 信頼できない文書が LLM に渡される前にスキャンし、隠されたプロンプトインジェクションを検出し、サニタイズし、信頼ラベルを付け、ポリシーを適用します。**外部コンテンツはデータであり、権限ではありません。**
+**AI エージェントのためのゼロトラスト入力セキュリティ層。** 信頼できない入力（文書・ソースコード・エージェントのルールファイル）が LLM に渡される前にスキャンし、隠されたプロンプトインジェクションを検出し、サニタイズし、信頼ラベルを付け、ポリシーを適用します。**外部コンテンツはデータであり、権限ではありません。**
 
 [![CI](https://github.com/sscodeai/aiitg/actions/workflows/ci.yml/badge.svg)](https://github.com/sscodeai/aiitg/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)]()
@@ -117,7 +117,7 @@ aiitg scan report.docx --format json        # JSON evidence report
 aiitg scan report.xlsx --min-severity high  # high 以上の finding のみ
 aiitg scan report.pdf --format rich         # ターミナル表形式
 aiitg scan ./inbox --recursive --jsonl      # ディレクトリ一括スキャン。1 行 1 compact JSON
-aiitg list-detectors                        # 7 個の検出器を一覧表示
+aiitg list-detectors                        # 8 個の検出器を一覧表示
 ```
 
 終了コード: `0` = clean · `1` = 閾値以上の finding あり · `2` = 使用方法エラー · `3` = パースエラー（CI 向け）。
