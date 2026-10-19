@@ -98,13 +98,13 @@ Corpus and probe live in `tests/detectors/test_comment_directive.py`,
 | Attack corpus — 32 payloads: the paper's 10 classes × 3 framings + 2 agent-directed (2 payloads verbatim from the paper; the rest authored in its stated format) | **32/32 detected**, class agreement 32/32, 29 CRITICAL / 3 HIGH |
 | Benign corpus — 46 ordinary work comments across five comment syntax families | **0 false positives** |
 | Ambiguous corpus — 4 legit notes byte-shaped like payloads, pinned in the test file | 4/4 reported — **accepted false positives**, the fail-closed choice |
-| Live source probe — `scripts/probe_comment_directive.py` over this project + `takumi/packages` (build output excluded): **106 files / 738 comment lines**, via the shipped `run_scan()` | **0 findings** |
+| Live source probe — `scripts/probe_comment_directive.py` over this project + `takumi/packages` (build output excluded): **107 files / 750 comment lines**, via the shipped `run_scan()` | **0 findings** |
 
 The ambiguous row is the honest one: those four are *legit* notes that are reported anyway. They are
 counted as a known false-positive class, not as detections, so the corpus can never look cleaner than
 it is. The live-probe figures are reproducible with the committed script (see §6); the earlier
 "167 files / 4,643 comment lines" figure came from *including* build output (`dist/`) and from a looser
-comment-line definition — `--include-build` restores 168 files, but generated bundles are not
+comment-line definition — `--include-build` restores 169 files, but generated bundles are not
 third-party source a developer reads, so they are excluded by default.
 
 Boundaries, stated plainly:
@@ -135,7 +135,7 @@ make test                                   # unit + integration + e2e, incl. th
 pytest tests/detectors/test_comment_directive.py -q     # the attack/benign/ambiguous corpora
 
 # The live false-positive probe. Build output is excluded by default; pass
-# --include-build to reproduce the (older, larger) 168-file figure.
+# --include-build to reproduce the (older, larger) 169-file figure.
 python scripts/probe_comment_directive.py . ../takumi/packages
 python scripts/probe_comment_directive.py . ../takumi/packages --json
 ```
