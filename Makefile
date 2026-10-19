@@ -1,4 +1,4 @@
-.PHONY: test lint typecheck build demo
+.PHONY: test lint typecheck build demo probe
 
 test:
 	.venv/bin/pytest -q
@@ -14,3 +14,6 @@ build:
 
 demo:
 	.venv/bin/python examples/scan_demo.py
+
+probe:
+	.venv/bin/python scripts/probe_comment_directive.py .

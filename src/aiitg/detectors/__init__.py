@@ -13,6 +13,7 @@ from aiitg.detectors.structure.hidden_sheet import HiddenSheetDetector
 from aiitg.detectors.structure.ooxml_nodes import OOXMLNodesDetector
 from aiitg.detectors.text.comment_directive import CommentDirectiveDetector
 from aiitg.detectors.text.hidden_style import HiddenStyleDetector
+from aiitg.detectors.text.speaker_notes import SpeakerNotesDetector
 from aiitg.detectors.text.tiny_font import TinyFontDetector
 from aiitg.detectors.text.zero_width import ZeroWidthDetector
 
@@ -25,6 +26,7 @@ ALL_DETECTORS: list[Detector] = [
     AnnotationsDetector(),
     DocumentMetaDetector(),
     CommentDirectiveDetector(),
+    SpeakerNotesDetector(),
 ]
 
 __all__ = ["ALL_DETECTORS"]

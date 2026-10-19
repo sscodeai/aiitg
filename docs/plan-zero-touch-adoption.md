@@ -615,8 +615,9 @@ Guardrails for backward compatibility:
 - **Hook-contract drift**: the `hookSpecificOutput` schema is an external contract and may change.
   Mitigation: pin the documented field names in one renderer (`render_outcome`), test it directly,
   and keep the CLI stdout shape in one place.
-- **Performance**: each enforced `Read` runs a full parse + the detector chain (documents: 7 detectors;
-  source files: the code-context detector only). Mitigation: extension
+- **Performance**: each enforced `Read` runs a full parse + the detector chain (documents: up to 8
+  detectors — pptx adds the speaker-notes detector; source files: the code-context detector only).
+  Mitigation: extension
   allowlist, `(path, mtime, size)` result cache, hook `timeout` in settings, and an `--no-scan`
   passthrough for large files.
 - **False positives**: `default_policy` quarantines on any evidence (POL-002), so legitimately

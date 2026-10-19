@@ -32,7 +32,7 @@ _STRUCT_WEIGHT = {
 }
 
 # detector IDs that signal deliberate concealment (structure)
-_STRUCT_DETECTORS = {"DET-001", "DET-002", "DET-003", "DET-004", "DET-005", "DET-006"}
+_STRUCT_DETECTORS = {"DET-001", "DET-002", "DET-003", "DET-004", "DET-005", "DET-006", "DET-009"}
 # detector IDs that signal manipulation intent (content)
 _CONTENT_DETECTORS = {"DET-007", "DET-008"}
 

@@ -7,7 +7,7 @@
 [![CI](https://github.com/sscodeai/aiitg/actions/workflows/ci.yml/badge.svg)](https://github.com/sscodeai/aiitg/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)]()
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)]()
-[![Tests](https://img.shields.io/badge/tests-330%20passed-brightgreen.svg)](.github/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-339%20passed-brightgreen.svg)](.github/workflows/ci.yml)
 [![arXiv](https://img.shields.io/badge/arXiv-2507.06185-red.svg)]()
 
 ---
@@ -56,7 +56,7 @@ Untrusted input (docx/xlsx/xls/pdf/html/pptx)
 │  FormatRegistry → parser → ParsedDocument      │
 │  (format-agnostic intermediate model)          │
 │                                               │
-│  Detector chain (8 detectors)                 │
+│  Detector chain (9 detectors)                 │
 │  → Evidence list (coordinate-level)           │
 │                                               │
 │  Sanitizer (strip / redact)                   │
@@ -94,6 +94,7 @@ Untrusted input (docx/xlsx/xls/pdf/html/pptx)
 | DET-006 | annotations | Word comments, PDF annotations, HTML comments | LOW |
 | DET-007 | document_meta | Metadata / VBA macros / JS signals | LOW |
 | DET-008 | comment_directive | Insecure instruction hidden in an ordinary code comment or agent rule file — the directive frame (marker / addressed / imperative / authority / "skip the check") plus one of the ten injected-weakness classes | CRITICAL · HIGH · MEDIUM |
+| DET-009 | speaker_notes | Directive/injection content in PowerPoint speaker notes — machine-readable but not shown when the deck is presented | HIGH · MEDIUM |
 
 ### Formats
 
@@ -133,15 +134,27 @@ Measured on this repository's corpus and on live third-party source, with the bo
 |---|---|
 | Attack corpus (10 classes × 3 framings + 2 agent-directed; 2 payloads verbatim from the paper) | 32/32 detected, 29 CRITICAL / 3 HIGH |
 | Benign corpus (46 ordinary work comments, five syntax families) | 0 false positives |
-| Live third-party source probe (this project + `takumi/packages`: 167 files, 4,643 comment lines) | 0 findings |
-| Legit notes byte-shaped like a payload (`# TODO: use DBMS_SCHEDULER for the nightly job`) | flagged — the deliberate fail-closed choice |
+| Ambiguous corpus (4 legit notes byte-shaped like a payload, pinned in `tests/`) | 4/4 reported — accepted false positives, the deliberate fail-closed choice |
+| Live third-party source probe (`scripts/probe_comment_directive.py`: this project + `takumi/packages`, build output excluded: 106 files, 738 comment lines) | 0 findings |
 
 Honest boundaries: the paper's 700-item corpus was not released with its HTML, so these figures are
 **not** a reproduction of the paper's numbers; a deterministic pattern detector is incomplete by
 construction (the paper's own strongest screen still missed ~⅓); and DET-008 reads *instructions*, not
-the vulnerable code a model may already have written — that is a SAST job. Design notes, the full
-measurement method and the known gaps:
+the vulnerable code a model may already have written — that is a SAST job. The ambiguous row is
+reported as a known false-positive class, not as detections. Design notes, the full measurement method
+and the known gaps:
 [`docs/comment-directive-coverage.md`](docs/comment-directive-coverage.md).
+
+### Speaker notes (DET-009)
+
+A slide's speaker notes are not shown when the deck is presented, but they live in the file and every
+extractor — and therefore every LLM that summarises the deck — reads them. `pptx` already parsed them;
+until DET-009 nothing scored them, so a deck whose **only** injection was a plain-text instruction in
+the notes scanned clean and was allowed. DET-009 closes that channel: a note that tries to instruct a
+reader (a model or a human) is reported — HIGH for an explicit override/"do not tell" payload, MEDIUM
+for a system-addressed or verdict-directing one — and the notes run is defused on quarantine. Generic
+reminders ("update the roadmap slide") are not reported. Like DET-008 it is a pattern detector: the
+channel is covered, the payload vocabulary is not exhaustive.
 
 ## Install
 
@@ -181,7 +194,7 @@ aiitg scan report.docx --format json        # JSON evidence report
 aiitg scan report.xlsx --min-severity high  # only high+ findings
 aiitg scan report.pdf --format rich         # terminal table
 aiitg scan ./inbox --recursive --jsonl      # batch directory scan, one compact JSON object per line
-aiitg list-detectors                        # list all 8 detectors
+aiitg list-detectors                        # list all 9 detectors
 ```
 
 Exit codes: `0` = clean · `1` = findings at/above threshold · `2` = usage error · `3` = parse error (CI-friendly).
@@ -291,7 +304,7 @@ else:
 ## Testing
 
 ```bash
-make test        # 330 tests
+make test        # 339 tests
 make lint        # ruff
 make typecheck   # mypy
 make build       # build wheel/sdist

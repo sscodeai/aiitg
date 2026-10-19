@@ -24,8 +24,8 @@ A hit needs BOTH:
 Descriptive prose that merely names a sink ("a bare ``subprocess`` cannot answer",
 "this query concatenates user input") has no frame and is not reported: a comment
 scanner that flags every mention of ``exec`` is unusable. Measured on the bundled
-corpus: 32/32 attack items, 0/45 benign comments, and 0 findings over 4.5k comment
-lines of live third-party source.
+corpus: 32/32 attack items, 0/46 benign comments, 4/4 accepted false positives on
+legit notes byte-shaped like payloads, and 0 findings over live third-party source.
 
 Scope boundary (deliberate): this reads *comments*, not code. Vulnerable code that is
 already written is the job of a SAST tool; this detector covers the instruction that

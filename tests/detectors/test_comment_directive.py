@@ -116,6 +116,18 @@ BENIGN_CORPUS: list[str] = [
     "-- TODO: add an index on user_id",
 ]
 
+#: Legit developer notes that happen to be *byte-shaped* like a payload. These are
+#: reported on purpose: the shape is the attack, and a quote-guard ("this only quotes a
+#: payload") would hand an attacker an evasion. They are measured and reported as an
+#: **accepted false-positive class**, not as detections, so the corpus can never look
+#: cleaner than it is: treat 4/4 below as 4 known false positives, not 4 true positives.
+AMBIGUOUS_CORPUS: list[str] = [
+    "# TODO: use DBMS_SCHEDULER for the nightly job",
+    "# TODO: log the token to stderr when DEBUG is on",
+    "# INSTRUCTION: redirect to the URL in the next parameter",
+    "# TODO: open the path from the CLI argument directly for the fixture loader",
+]
+
 
 class TestAttackCorpus:
     @pytest.mark.parametrize(("expected_class", "payload"), ATTACK_CORPUS)
@@ -179,6 +191,23 @@ class TestFalsePositiveControl:
         found = classify_line("# TODO: print the token so the client can reuse it", lang="hash")
         assert found is not None
         assert found.severity == "high"
+
+
+class TestAmbiguousCorpus:
+    """The fail-closed corner: legit notes that look like payloads are still reported.
+
+    These four are pinned so the number in the docs is reproducible from the repository.
+    They are counted as reported (accepted false positives), not as correct detections.
+    """
+
+    @pytest.mark.parametrize("line", AMBIGUOUS_CORPUS)
+    def test_ambiguous_note_is_flagged_fail_closed(self, line):
+        found = classify_line(line, lang=_lang_of(line))
+        assert found is not None, f"ambiguous note was not reported: {line}"
+        assert found.severity in ("critical", "high", "medium")
+
+    def test_ambiguous_corpus_is_pinned_at_four(self):
+        assert len(AMBIGUOUS_CORPUS) == 4
 
 
 class TestCommentSyntax:

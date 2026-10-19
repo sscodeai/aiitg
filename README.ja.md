@@ -7,7 +7,7 @@
 [![CI](https://github.com/sscodeai/aiitg/actions/workflows/ci.yml/badge.svg)](https://github.com/sscodeai/aiitg/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)]()
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)]()
-[![Tests](https://img.shields.io/badge/tests-330%20passed-brightgreen.svg)](.github/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-339%20passed-brightgreen.svg)](.github/workflows/ci.yml)
 [![arXiv](https://img.shields.io/badge/arXiv-2507.06185-red.svg)]()
 
 ---
@@ -55,7 +55,7 @@ Untrusted input (docx/xlsx/xls/pdf/html/pptx)
 │  FormatRegistry → parser → ParsedDocument      │
 │  (format-agnostic intermediate model)          │
 │                                               │
-│  Detector chain (8 detectors)                 │
+│  Detector chain (9 detectors)                 │
 │  → Evidence list (coordinate-level)           │
 │                                               │
 │  Sanitizer (strip / redact)                   │
@@ -93,6 +93,7 @@ Untrusted input (docx/xlsx/xls/pdf/html/pptx)
 | DET-006 | annotations | Word コメント、PDF 注釈、HTML コメント | LOW |
 | DET-007 | document_meta | メタデータ、VBA マクロ、JS シグナル | LOW |
 | DET-008 | comment_directive | 普通のコードコメント、またはエージェントのルールファイルに隠された危険な指示。指示フレーム（マーカー / モデルへの呼びかけ / 命令形 / 権威の主張 / 検証を省けという指示）と、論文 Appendix A の 10 種の脆弱性クラスのいずれかが同時に揃ったときに発火 | CRITICAL · HIGH · MEDIUM |
+| DET-009 | speaker_notes | PowerPoint の講演者メモにある指示・注入。機械は読むが、発表時には表示されない | HIGH · MEDIUM |
 
 ### 対応形式
 
@@ -117,7 +118,7 @@ aiitg scan report.docx --format json        # JSON evidence report
 aiitg scan report.xlsx --min-severity high  # high 以上の finding のみ
 aiitg scan report.pdf --format rich         # ターミナル表形式
 aiitg scan ./inbox --recursive --jsonl      # ディレクトリ一括スキャン。1 行 1 compact JSON
-aiitg list-detectors                        # 8 個の検出器を一覧表示
+aiitg list-detectors                        # 9 個の検出器を一覧表示
 ```
 
 終了コード: `0` = clean · `1` = 閾値以上の finding あり · `2` = 使用方法エラー · `3` = パースエラー（CI 向け）。
@@ -207,18 +208,32 @@ aiitg hook pretooluse < payload.json      # deny（POL-001）: ファイルは�
 |---|---|
 | 攻撃コーパス（10 クラス × 3 フレーミング + エージェント向け 2 件。うち 2 件は論文から逐語） | 32/32 検出、29 CRITICAL / 3 HIGH |
 | 良性コーパス（通常の作業コメント 46 件、5 つのコメント記法） | 誤検知 0 |
-| 実在のサードパーティソース走査（本プロジェクト + `takumi/packages`: 167 ファイル、コメント 4,643 行） | 検出 0 |
-| ペイロードと同じ形をした正当なメモ（`# TODO: use DBMS_SCHEDULER for the nightly job`） | 検出する（意図的な fail-closed） |
+| 曖昧コーパス（ペイロードと同じ形をした正当なメモ 4 件、テストに固定） | 4/4 検出 — 受け入れた**誤検知クラス**（意図的な fail-closed） |
+| 実在ソース走査（`scripts/probe_comment_directive.py`、本プロジェクト + `takumi/packages`、ビルド成果物は除外: 106 ファイル / コメント 738 行） | 検出 0 |
+
+曖昧コーパスの 4 件は *正当な* メモであり、それでも報告されます。これは検出ではなく既知の誤検知として計上し、
+コーパスが実際よりきれいに見えることはありません。実在ソース走査の数値はコミット済みスクリプトで再現できます（§6）。
+以前の「167 ファイル / コメント 4,643 行」はビルド成果物（`dist/`）を含み、コメント行の数え方も緩かったものです——
+`--include-build` で 168 ファイルになりますが、生成物は開発者が読むサードパーティソースではないため既定で除外します。
 
 正直な境界: 論文の 700 件コーパスは HTML と一緒に公開されていないため、この数値は論文の数値の**再現ではありません**。
 決定的なパターン検出器は原理的に不完全です（論文自身の最強スクリーナーでも約 1/3 を見逃しています）。
 また DET-008 が読むのは *指示* であり、モデルが既に書いた脆弱なコードではありません（それは SAST の役割です）。
 設計と既知のギャップ: [`docs/comment-directive-coverage.md`](docs/comment-directive-coverage.md)。
 
+### 講演者メモ（DET-009）
+
+スライドの講演者メモは発表時には表示されませんが、ファイルには残り、あらゆる抽出器——つまり要約する LLM——が読みます。
+`pptx` は以前からメモをパースしていましたが、それを採点する検出器がなく、メモだけに平文の指示を仕込んだデッキは
+検出 0 の clean として通過していました。DET-009 はこのチャネルを塞ぎます。読み手（モデルまたは人間）に指示しようとする
+メモを報告し（明示的な上書き /「伝えるな」は HIGH、システム宛や結論を誘導するものは MEDIUM）、quarantine 時にはメモの run を
+無効化します。「ロードマップのスライドを更新する」といった一般的なリマインダーは報告しません。DET-008 と同様に
+パターン検出器であり、チャネルは覆いますが語彙は網羅的ではありません。
+
 ## テスト
 
 ```bash
-make test        # 330 tests
+make test        # 339 tests
 make lint        # ruff
 make typecheck   # mypy
 make build       # wheel/sdist をビルド
