@@ -4,6 +4,29 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **DET-009 `speaker_notes`**: directive/injection content in PowerPoint speaker notes. Notes were
+  already parsed (`element="notes"`) but nothing scored them, so a deck whose only injection was a
+  plain-text instruction in the notes scanned clean and was allowed. HIGH for an explicit
+  override/"do not tell" payload, MEDIUM for a system-addressed or verdict-directing one; the notes
+  run is defused on quarantine.
+- **Reproducible DET-008 measurements**: an `AMBIGUOUS_CORPUS` pinned in
+  `tests/detectors/test_comment_directive.py` (4 legit notes that are reported on purpose, counted as
+  accepted false positives) and `scripts/probe_comment_directive.py`, the committed live
+  false-positive probe (build output excluded by default, `--include-build` to include it). The README
+  and `docs/comment-directive-coverage.md` figures now come from these artifacts.
+
+### Fixed
+
+- **PPTX paragraph coordinates**: the parser used the slide number as `TextParagraph.index`, so every
+  text box (and the notes) on a slide shared one coordinate. A single hidden run therefore matched
+  every run on the slide, and `sanitize --mode redact` replaced the whole slide with `[REDACTED]`.
+  Indices are now unique per paragraph; the slide number remains in `raw["slide"]`.
+- DET-008 detector docstring said "0/45 benign comments"; the pinned corpus holds 46.
+
 ## [0.2.1] — 2026-09-20
 
 Fixes merged from `main` (PR #1, `fix/dev-review-findings`) that this branch now builds on:

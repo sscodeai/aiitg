@@ -54,6 +54,11 @@ class PptxParser:
         prs = Presentation(str(path))
         doc_model = ParsedDocument(kind="pptx", source_path=str(path))
         slide_num = 0
+        # Paragraph index must be unique across the document: it is the coordinate the
+        # sanitizer uses to redact exactly one run. Using the slide number made every
+        # text box on a slide share one coordinate, so a single hidden run matched (and
+        # redacted) the whole slide. The slide is still reported via raw["slide"].
+        para_index = 0
 
         for slide in prs.slides:
             slide_num += 1
@@ -68,10 +73,11 @@ class PptxParser:
                     runs: list[TextRun] = []
                     for r in para.runs:
                         runs.append(_run_from_font(r.text, r.font))
+                    para_index += 1
                     doc_model.paragraphs.append(
                         TextParagraph(
                             text=text,
-                            index=slide_num,
+                            index=para_index,
                             runs=runs,
                             raw={"slide": slide_num, "shape": shape.shape_id, "element": f"slide{slide_num}"},
                         )
@@ -82,10 +88,11 @@ class PptxParser:
                 notes_frame = slide.notes_slide.notes_text_frame
                 if notes_frame is not None and notes_frame.text.strip():
                     notes_text = notes_frame.text
+                    para_index += 1
                     doc_model.paragraphs.append(
                         TextParagraph(
                             text=notes_text,
-                            index=slide_num,
+                            index=para_index,
                             runs=[TextRun(text=notes_text, is_header_footer=True, raw={"element": "notes"})],
                             raw={"slide": slide_num, "element": "notes"},
                         )
