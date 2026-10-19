@@ -135,7 +135,7 @@ Measured on this repository's corpus and on live third-party source, with the bo
 | Attack corpus (10 classes × 3 framings + 2 agent-directed; 2 payloads verbatim from the paper) | 32/32 detected, 29 CRITICAL / 3 HIGH |
 | Benign corpus (46 ordinary work comments, five syntax families) | 0 false positives |
 | Ambiguous corpus (4 legit notes byte-shaped like a payload, pinned in `tests/`) | 4/4 reported — accepted false positives, the deliberate fail-closed choice |
-| Live third-party source probe (`scripts/probe_comment_directive.py`: this project + `takumi/packages`, build output excluded: 106 files, 738 comment lines) | 0 findings |
+| Live third-party source probe (`scripts/probe_comment_directive.py`: this project + `takumi/packages`, build output excluded: 107 files, 750 comment lines) | 0 findings |
 
 Honest boundaries: the paper's 700-item corpus was not released with its HTML, so these figures are
 **not** a reproduction of the paper's numbers; a deterministic pattern detector is incomplete by
