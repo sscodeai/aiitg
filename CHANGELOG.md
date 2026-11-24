@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-11-25
+
 ### Changed
 
 - Repository hygiene: retired the merged `dev` and `fix/*` branches; contribution and CI guidance now branch from `main`.
