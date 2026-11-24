@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Repository hygiene: retired the merged `dev` and `fix/*` branches; contribution and CI guidance now branch from `main`.
+
 ### Added
 
 - **DET-009 `speaker_notes`**: directive/injection content in PowerPoint speaker notes. Notes were
