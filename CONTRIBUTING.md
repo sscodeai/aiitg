@@ -22,7 +22,7 @@ make lint        # ruff, line-length 120
 make typecheck   # mypy on src
 ```
 
-CI runs exactly these on Python 3.11 and 3.12 for every push to `main`/`dev` and every pull request.
+CI runs exactly these on Python 3.11 and 3.12 for every push to `main` and every pull request.
 
 ## Conventions
 
@@ -53,7 +53,7 @@ CI runs exactly these on Python 3.11 and 3.12 for every push to `main`/`dev` and
 
 ## Pull requests
 
-- Branch from `dev`, keep `main` as the release line.
+- Branch from `main`; `main` is the release line.
 - Describe the threat model you are changing, not just the diff: what can reach the model before and
   after your change.
 - If your change touches a promise in the README, update the README in the same PR.
