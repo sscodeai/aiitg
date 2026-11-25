@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Require `mcp>=1,<2`; the previous `<2` bound allowed an incompatible pre-1.0 MCP release to be selected.
+
 ## [0.4.0] — 2026-11-25
 
 ### Changed
