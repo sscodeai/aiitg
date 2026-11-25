@@ -9,6 +9,7 @@ All notable changes to this project are documented here. The format follows
 ### Changed
 
 - Require `mcp>=1,<2`; the previous `<2` bound allowed an incompatible pre-1.0 MCP release to be selected.
+- CI now uses `actions/checkout@v7` and `actions/setup-python@v7`, and tests Python 3.11–3.14.
 
 ## [0.4.0] — 2026-11-25
 
