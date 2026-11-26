@@ -10,7 +10,7 @@ Thanks for looking. This project has one invariant above everything else:
 ```bash
 git clone https://github.com/sscodeai/aiitg.git
 cd aiitg
-uv venv .venv && uv pip install -e ".[dev]"
+uv sync --extra dev
 # or: python3.11 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 ```
 
