@@ -180,7 +180,7 @@ aiitg hook doctor     # confirm it is wired AND startable
 ### Work on it (development)
 
 ```bash
-uv venv .venv && uv pip install -e ".[dev]"
+uv sync --extra dev
 # or
 python3.11 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 ```
