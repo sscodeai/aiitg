@@ -51,6 +51,10 @@ CI runs exactly these on Python 3.11 and 3.12 for every push to `main` and every
    set per event.
 4. **Evidence is coordinate-level.** Every finding carries a location that a human can open.
 
+## Releasing
+
+See [`docs/releasing.md`](docs/releasing.md) for the version bump, tag, and PyPI publishing steps.
+
 ## Pull requests
 
 - Branch from `main`; `main` is the release line.
